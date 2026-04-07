@@ -107,27 +107,58 @@ async function handleModelsList(): Promise<Response> {
 async function handleCurrentModel(req: Request): Promise<Response> {
   if (req.method === 'GET') {
     const settings = await settingsService.getUserSettings()
-    const baseModelId = (settings.model as string) || DEFAULT_MODEL
+    const explicitModel = (settings.model as string) || ''
     const contextTier = (settings.modelContext as string) || undefined
+    const env = (settings.env as Record<string, string>) || {}
 
     // Build the full model list: prefer active provider's models, fall back to defaults
     const { providers, activeId } = await providerService.listProviders()
     const activeProvider = activeId ? providers.find((p) => p.id === activeId) : null
+
+    let currentModelId: string
+    let currentModelName: string
+
+    if (activeProvider) {
+      // Provider is active — use the model from env (set by syncToSettings when provider was activated)
+      // unless user explicitly set a different model ID in settings
+      const providerEnvModel = env.ANTHROPIC_MODEL
+      if (providerEnvModel && (!explicitModel || explicitModel === DEFAULT_MODEL)) {
+        // No explicit model override — use the provider's configured model
+        currentModelId = providerEnvModel
+        currentModelName = providerEnvModel
+      } else {
+        // User explicitly set a model (possibly from the provider's model list)
+        currentModelId = explicitModel || providerEnvModel || activeProvider.models.main
+        currentModelName = currentModelId
+      }
+    } else {
+      // No provider — use settings model with context tier
+      currentModelId = explicitModel || DEFAULT_MODEL
+      currentModelName = currentModelId
+    }
+
+    const lookupId = contextTier ? `${currentModelId}:${contextTier}` : currentModelId
+
+    // Build available models for name lookup
     const availableModels = activeProvider
-      ? [{ id: activeProvider.models.main, name: activeProvider.models.main, description: 'Main model', context: '' }]
+      ? [
+          { id: activeProvider.models.main, name: activeProvider.models.main, description: 'Main model', context: '' },
+          ...(activeProvider.models.haiku && activeProvider.models.haiku !== activeProvider.models.main ? [{ id: activeProvider.models.haiku, name: activeProvider.models.haiku, description: 'Haiku model', context: '' }] : []),
+          ...(activeProvider.models.sonnet && activeProvider.models.sonnet !== activeProvider.models.main ? [{ id: activeProvider.models.sonnet, name: activeProvider.models.sonnet, description: 'Sonnet model', context: '' }] : []),
+          ...(activeProvider.models.opus && activeProvider.models.opus !== activeProvider.models.main ? [{ id: activeProvider.models.opus, name: activeProvider.models.opus, description: 'Opus model', context: '' }] : []),
+        ]
       : DEFAULT_MODELS
 
-    // Reconstruct composite ID for lookup (e.g. 'claude-opus-4-6-20250610:1m')
-    const lookupId = contextTier ? `${baseModelId}:${contextTier}` : baseModelId
-    const model = availableModels.find((m) => m.id === lookupId)
-      || availableModels.find((m) => m.id === baseModelId)
+    const modelEntry = availableModels.find((m) => m.id === lookupId)
+      || availableModels.find((m) => m.id === currentModelId)
       || {
-        id: baseModelId,
-        name: baseModelId,
+        id: currentModelId,
+        name: currentModelName,
         description: 'Custom model',
-        context: 'unknown',
+        context: contextTier || 'unknown',
       }
-    return Response.json({ model })
+
+    return Response.json({ model: { ...modelEntry, context: contextTier || modelEntry.context } })
   }
 
   if (req.method === 'PUT') {

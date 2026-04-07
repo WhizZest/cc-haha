@@ -14,8 +14,10 @@ import {
 } from '../services/conversationService.js'
 import { sessionService } from '../services/sessionService.js'
 import { SettingsService } from '../services/settingsService.js'
+import { ProviderService } from '../services/providerService.js'
 
 const settingsService = new SettingsService()
+const providerService = new ProviderService()
 
 /**
  * Cache slash commands from CLI init messages, keyed by sessionId.
@@ -566,10 +568,6 @@ async function getRuntimeSettings(): Promise<{
   effort?: string
 }> {
   const userSettings = await settingsService.getUserSettings()
-  const baseModel =
-    typeof userSettings.model === 'string' && userSettings.model.trim()
-      ? userSettings.model
-      : undefined
   const modelContext =
     typeof userSettings.modelContext === 'string' && userSettings.modelContext.trim()
       ? userSettings.modelContext
@@ -579,9 +577,32 @@ async function getRuntimeSettings(): Promise<{
       ? userSettings.effort
       : undefined
 
+  // Check if a custom provider is active
+  const { activeId } = await providerService.listProviders()
+
+  let model: string | undefined
+  if (activeId) {
+    // Provider is active — only pass --model if user explicitly selected a non-default model.
+    // Otherwise the CLI should use ANTHROPIC_MODEL from env (set by syncToSettings).
+    // Default Anthropic model should be overridden by the provider's model.
+    const baseModel = (userSettings.model as string) || ''
+    if (baseModel && baseModel !== 'claude-sonnet-4-6-20250514') {
+      // User explicitly selected a different model — pass it through
+      model = baseModel
+      if (modelContext) model += `:${modelContext}`
+    }
+  } else {
+    // No provider — pass model normally
+    const baseModel =
+      typeof userSettings.model === 'string' && userSettings.model.trim()
+        ? userSettings.model
+        : undefined
+    model = baseModel ? (modelContext ? `${baseModel}:${modelContext}` : baseModel) : undefined
+  }
+
   return {
     permissionMode: await settingsService.getPermissionMode().catch(() => undefined),
-    model: baseModel ? (modelContext ? `${baseModel}:${modelContext}` : baseModel) : undefined,
+    model,
     effort,
   }
 }
