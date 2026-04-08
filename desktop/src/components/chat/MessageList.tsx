@@ -21,7 +21,7 @@ type RenderItem =
   | { kind: 'tool_group'; toolCalls: ToolCall[]; id: string }
   | { kind: 'message'; message: UIMessage }
 
-function buildRenderItems(messages: UIMessage[], toolUseIds: Set<string>): RenderItem[] {
+export function buildRenderItems(messages: UIMessage[], toolUseIds: Set<string>): RenderItem[] {
   const items: RenderItem[] = []
   let pendingToolCalls: ToolCall[] = []
 
@@ -42,6 +42,10 @@ function buildRenderItems(messages: UIMessage[], toolUseIds: Set<string>): Rende
     }
 
     if (msg.type === 'tool_use') {
+      if (msg.parentToolUseId) {
+        flushGroup()
+        continue
+      }
       if (msg.toolName === 'AskUserQuestion') {
         flushGroup()
         items.push({ kind: 'message', message: msg })
@@ -68,10 +72,19 @@ export function MessageList() {
 
   const toolUseIds = new Set<string>()
   const toolResultMap = new Map<string, ToolResult>()
+  const childToolCallsByParent = new Map<string, ToolCall[]>()
 
   for (const msg of messages) {
     if (msg.type === 'tool_use') {
       toolUseIds.add(msg.toolUseId)
+      if (msg.parentToolUseId) {
+        const siblings = childToolCallsByParent.get(msg.parentToolUseId)
+        if (siblings) {
+          siblings.push(msg)
+        } else {
+          childToolCallsByParent.set(msg.parentToolUseId, [msg])
+        }
+      }
     }
     if (msg.type === 'tool_result' && msg.toolUseId) {
       toolResultMap.set(msg.toolUseId, msg)
@@ -90,6 +103,7 @@ export function MessageList() {
                 key={item.id}
                 toolCalls={item.toolCalls}
                 resultMap={toolResultMap}
+                childToolCallsByParent={childToolCallsByParent}
                 isStreaming={
                   chatState === 'tool_executing' &&
                   item.toolCalls.some((tc) => !toolResultMap.has(tc.toolUseId))

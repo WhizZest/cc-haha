@@ -44,6 +44,7 @@ export type MessageEntry = {
   timestamp: string
   model?: string
   parentUuid?: string
+  parentToolUseId?: string
   isSidechain?: boolean
 }
 
@@ -52,6 +53,7 @@ type RawEntry = {
   type?: string
   uuid?: string
   parentUuid?: string | null
+  parent_tool_use_id?: string | null
   isSidechain?: boolean
   isMeta?: boolean
   cwd?: string
@@ -150,7 +152,10 @@ export class SessionService {
   // Entry → MessageEntry conversion
   // --------------------------------------------------------------------------
 
-  private entryToMessage(entry: RawEntry): MessageEntry | null {
+  private entryToMessage(
+    entry: RawEntry,
+    parentToolUseId?: string,
+  ): MessageEntry | null {
     const msg = entry.message
     if (!msg || !msg.role) return null
 
@@ -193,8 +198,81 @@ export class SessionService {
       timestamp: entry.timestamp || new Date().toISOString(),
       model: msg.model,
       parentUuid: entry.parentUuid ?? undefined,
+      parentToolUseId,
       isSidechain: entry.isSidechain,
     }
+  }
+
+  private extractAgentToolUseId(entry: RawEntry): string | undefined {
+    const content = entry.message?.content
+    if (!Array.isArray(content)) return undefined
+
+    for (const block of content as Array<Record<string, unknown>>) {
+      if (
+        block.type === 'tool_use' &&
+        block.name === 'Agent' &&
+        typeof block.id === 'string'
+      ) {
+        return block.id
+      }
+    }
+
+    return undefined
+  }
+
+  private resolveParentToolUseId(
+    entry: RawEntry,
+    entriesByUuid: Map<string, RawEntry>,
+    cache: Map<string, string | undefined>,
+  ): string | undefined {
+    if (
+      typeof entry.parent_tool_use_id === 'string' &&
+      entry.parent_tool_use_id.length > 0
+    ) {
+      return entry.parent_tool_use_id
+    }
+
+    if (entry.isSidechain !== true) {
+      return undefined
+    }
+
+    const cacheKey = entry.uuid
+    if (cacheKey && cache.has(cacheKey)) {
+      return cache.get(cacheKey)
+    }
+
+    let resolved: string | undefined
+    let currentParentUuid =
+      typeof entry.parentUuid === 'string' ? entry.parentUuid : undefined
+    const visited = new Set<string>()
+
+    while (currentParentUuid && !visited.has(currentParentUuid)) {
+      visited.add(currentParentUuid)
+      const parentEntry = entriesByUuid.get(currentParentUuid)
+      if (!parentEntry) break
+
+      const directAgentToolUseId = this.extractAgentToolUseId(parentEntry)
+      if (directAgentToolUseId) {
+        resolved = directAgentToolUseId
+        break
+      }
+
+      if (parentEntry.uuid && cache.has(parentEntry.uuid)) {
+        resolved = cache.get(parentEntry.uuid)
+        break
+      }
+
+      currentParentUuid =
+        typeof parentEntry.parentUuid === 'string'
+          ? parentEntry.parentUuid
+          : undefined
+    }
+
+    if (cacheKey) {
+      cache.set(cacheKey, resolved)
+    }
+
+    return resolved
   }
 
   // --------------------------------------------------------------------------
@@ -651,6 +729,15 @@ export class SessionService {
 
   private entriesToMessages(entries: RawEntry[]): MessageEntry[] {
     const messages: MessageEntry[] = []
+    const entriesByUuid = new Map<string, RawEntry>()
+    const parentToolUseIdCache = new Map<string, string | undefined>()
+
+    for (const entry of entries) {
+      if (typeof entry.uuid === 'string' && entry.uuid.length > 0) {
+        entriesByUuid.set(entry.uuid, entry)
+      }
+    }
+
     for (const entry of entries) {
       // Only process transcript entries (user / assistant / system with messages)
       if (!entry.message?.role) continue
@@ -668,7 +755,12 @@ export class SessionService {
         continue
       }
 
-      const msg = this.entryToMessage(entry)
+      const parentToolUseId = this.resolveParentToolUseId(
+        entry,
+        entriesByUuid,
+        parentToolUseIdCache,
+      )
+      const msg = this.entryToMessage(entry, parentToolUseId)
       if (msg) {
         messages.push(msg)
       }

@@ -29,10 +29,10 @@ export type AttachmentRef = {
 
 export type ServerMessage =
   | { type: 'connected'; sessionId: string }
-  | { type: 'content_start'; blockType: 'text' | 'tool_use'; toolName?: string; toolUseId?: string }
+  | { type: 'content_start'; blockType: 'text' | 'tool_use'; toolName?: string; toolUseId?: string; parentToolUseId?: string }
   | { type: 'content_delta'; text?: string; toolInput?: string }
-  | { type: 'tool_use_complete'; toolName: string; toolUseId: string; input: unknown }
-  | { type: 'tool_result'; toolUseId: string; content: unknown; isError: boolean }
+  | { type: 'tool_use_complete'; toolName: string; toolUseId: string; input: unknown; parentToolUseId?: string }
+  | { type: 'tool_result'; toolUseId: string; content: unknown; isError: boolean; parentToolUseId?: string }
   | { type: 'permission_request'; requestId: string; toolName: string; input: unknown; description?: string }
   | { type: 'message_complete'; usage: TokenUsage }
   | { type: 'thinking'; text: string }

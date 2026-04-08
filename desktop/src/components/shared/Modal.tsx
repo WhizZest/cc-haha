@@ -33,10 +33,20 @@ export function Modal({ open, onClose, title, children, width = 560, footer }: M
       <div
         className="relative bg-[var(--color-surface)] rounded-[var(--radius-xl)] shadow-[var(--shadow-modal)] max-h-[85vh] flex flex-col"
         style={{ width, maxWidth: 'calc(100vw - 48px)' }}
+        role="dialog"
+        aria-modal="true"
       >
         {title && (
-          <div className="px-6 pt-6 pb-0">
+          <div className="flex items-start justify-between gap-4 px-6 pt-6 pb-0">
             <h2 className="text-xl font-bold text-[var(--color-text-primary)]">{title}</h2>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close dialog"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"
+            >
+              <span className="material-symbols-outlined text-[18px]">close</span>
+            </button>
           </div>
         )}
 

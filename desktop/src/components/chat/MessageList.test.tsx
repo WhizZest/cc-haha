@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MessageList, buildRenderItems } from './MessageList'
 import { useChatStore } from '../../stores/chatStore'
 import type { UIMessage } from '../../types/chat'
@@ -130,6 +130,45 @@ describe('MessageList nested tool calls', () => {
 
     expect(screen.getByText('Failed')).toBeTruthy()
     expect(screen.getByText('Explore agent unavailable in this session')).toBeTruthy()
+  })
+
+  it('shows completed agent output when no nested tool activity is available', () => {
+    const longResult = '探索完成。让我将结果整合写入计划文件。第二段补充内容用于验证 dialog 展示的是完整结果而不是截断摘要。'
+
+    useChatStore.setState({
+      messages: [
+        {
+          id: 'tool-agent',
+          type: 'tool_use',
+          toolName: 'Agent',
+          toolUseId: 'agent-1',
+          input: { description: '探索整体架构' },
+          timestamp: 1,
+        },
+        {
+          id: 'result-agent',
+          type: 'tool_result',
+          toolUseId: 'agent-1',
+          content: {
+            status: 'completed',
+            content: [{ type: 'text', text: longResult }],
+          },
+          isError: false,
+          timestamp: 2,
+        },
+      ],
+    })
+
+    render(<MessageList />)
+
+    expect(screen.getByText('Done')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'View result' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'View result' }))
+
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText(/第二段补充内容用于验证 dialog 展示的是完整结果而不是截断摘要。/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Close dialog' })).toBeTruthy()
   })
 
   it('renders copy controls for user messages and scopes assistant copy to a single reply', async () => {

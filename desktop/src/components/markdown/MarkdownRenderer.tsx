@@ -90,15 +90,16 @@ export function MarkdownRenderer({ content }: Props) {
   const proseClasses = `prose prose-sm max-w-none text-[var(--color-text-primary)]
     prose-headings:text-[var(--color-text-primary)] prose-headings:font-semibold
     prose-p:my-2 prose-p:leading-relaxed
+    prose-p:break-words
     prose-code:text-[13px] prose-code:font-[var(--font-mono)] prose-code:bg-[var(--color-surface-info)] prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded
     prose-pre:!bg-transparent prose-pre:!p-0 prose-pre:!shadow-none
     prose-a:text-[var(--color-text-accent)] prose-a:no-underline hover:prose-a:underline
     prose-strong:text-[var(--color-text-primary)]
     prose-ul:my-2 prose-ol:my-2
     prose-li:my-0.5
-    prose-table:text-sm
-    prose-th:bg-[var(--color-surface-info)] prose-th:px-3 prose-th:py-2
-    prose-td:px-3 prose-td:py-2 prose-td:border-[var(--color-border)]`
+    prose-table:w-full prose-table:table-auto prose-table:text-sm
+    prose-th:bg-[var(--color-surface-info)] prose-th:px-3 prose-th:py-2 prose-th:whitespace-normal prose-th:break-words prose-th:align-top
+    prose-td:px-3 prose-td:py-2 prose-td:border-[var(--color-border)] prose-td:whitespace-normal prose-td:break-words prose-td:align-top`
 
   if (codeBlocks.length === 0) {
     return (

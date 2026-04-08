@@ -334,6 +334,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             toolUseId: msg.toolUseId || s.activeToolUseId || '',
             input: msg.input,
             timestamp: Date.now(),
+            parentToolUseId: msg.parentToolUseId,
           }],
           activeToolUseId: null,
           activeToolName: null,
@@ -361,6 +362,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             content: msg.content,
             isError: msg.isError,
             timestamp: Date.now(),
+            parentToolUseId: msg.parentToolUseId,
           }],
           chatState: 'thinking',
           activeThinkingId: null,
@@ -532,6 +534,7 @@ export function mapHistoryMessagesToUiMessages(messages: MessageEntry[]): UIMess
             toolUseId: block.id ?? '',
             input: block.input,
             timestamp,
+            parentToolUseId: msg.parentToolUseId,
           })
         }
       }
@@ -567,6 +570,7 @@ export function mapHistoryMessagesToUiMessages(messages: MessageEntry[]): UIMess
             content: block.content,
             isError: !!block.is_error,
             timestamp,
+            parentToolUseId: msg.parentToolUseId,
           })
         }
       }

@@ -18,6 +18,7 @@ export type MessageEntry = {
   timestamp: string
   model?: string
   parentUuid?: string
+  parentToolUseId?: string
   isSidechain?: boolean
 }
 

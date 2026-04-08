@@ -246,6 +246,96 @@ describe('SessionService', () => {
     expect(messages).toHaveLength(2)
   })
 
+  it('should reconstruct parent agent tool linkage from parentUuid chains', async () => {
+    const sessionId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+    const userUuid = crypto.randomUUID()
+    const agentAssistantUuid = crypto.randomUUID()
+    const childAssistantUuid = crypto.randomUUID()
+
+    await writeSessionFile('-tmp-project', sessionId, [
+      makeSnapshotEntry(),
+      makeUserEntry('Inspect the codebase', userUuid),
+      {
+        parentUuid: userUuid,
+        isSidechain: false,
+        type: 'assistant',
+        message: {
+          model: 'claude-opus-4-6',
+          id: `msg_${crypto.randomUUID().slice(0, 20)}`,
+          type: 'message',
+          role: 'assistant',
+          content: [
+            {
+              type: 'tool_use',
+              name: 'Agent',
+              id: 'agent-tool-1',
+              input: { description: 'Inspect src/components' },
+            },
+          ],
+        },
+        uuid: agentAssistantUuid,
+        timestamp: '2026-01-01T00:02:00.000Z',
+      },
+      {
+        parentUuid: agentAssistantUuid,
+        isSidechain: true,
+        type: 'assistant',
+        message: {
+          model: 'claude-opus-4-6',
+          id: `msg_${crypto.randomUUID().slice(0, 20)}`,
+          type: 'message',
+          role: 'assistant',
+          content: [
+            {
+              type: 'tool_use',
+              name: 'Read',
+              id: 'read-tool-1',
+              input: { file_path: 'src/components/App.tsx' },
+            },
+          ],
+        },
+        uuid: childAssistantUuid,
+        timestamp: '2026-01-01T00:02:30.000Z',
+      },
+      {
+        parentUuid: childAssistantUuid,
+        isSidechain: true,
+        type: 'user',
+        message: {
+          role: 'user',
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'read-tool-1',
+              content: 'ok',
+              is_error: false,
+            },
+          ],
+        },
+        uuid: crypto.randomUUID(),
+        timestamp: '2026-01-01T00:03:00.000Z',
+        userType: 'external',
+        cwd: '/tmp/test',
+        sessionId: 'test-session',
+      },
+    ])
+
+    const messages = await service.getSessionMessages(sessionId)
+
+    expect(messages[1]).toMatchObject({
+      type: 'tool_use',
+      parentToolUseId: undefined,
+    })
+    expect(messages[2]).toMatchObject({
+      type: 'tool_use',
+      parentToolUseId: 'agent-tool-1',
+    })
+    expect(messages[3]).toMatchObject({
+      type: 'tool_result',
+      parentToolUseId: 'agent-tool-1',
+    })
+  })
+
   it('should recover workDir from session-meta entries', async () => {
     const sessionId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
     await writeSessionFile('-tmp-project', sessionId, [

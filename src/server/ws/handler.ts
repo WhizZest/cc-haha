@@ -377,6 +377,10 @@ function translateCliMessage(cliMsg: any, sessionId: string): ServerMessage[] {
                 toolName: block.name,
                 toolUseId: block.id,
                 input: block.input,
+                parentToolUseId:
+                  typeof cliMsg.parent_tool_use_id === 'string'
+                    ? cliMsg.parent_tool_use_id
+                    : undefined,
               })
             }
           }
@@ -402,6 +406,10 @@ function translateCliMessage(cliMsg: any, sessionId: string): ServerMessage[] {
               toolUseId: block.tool_use_id,
               content: block.content,
               isError: !!block.is_error,
+              parentToolUseId:
+                typeof cliMsg.parent_tool_use_id === 'string'
+                  ? cliMsg.parent_tool_use_id
+                  : undefined,
             })
           }
         }
@@ -439,6 +447,10 @@ function translateCliMessage(cliMsg: any, sessionId: string): ServerMessage[] {
               blockType: 'tool_use',
               toolName: contentBlock.name,
               toolUseId: contentBlock.id,
+              parentToolUseId:
+                typeof cliMsg.parent_tool_use_id === 'string'
+                  ? cliMsg.parent_tool_use_id
+                  : undefined,
             }]
           }
           return [{ type: 'content_start', blockType: 'text' }]
@@ -480,6 +492,10 @@ function translateCliMessage(cliMsg: any, sessionId: string): ServerMessage[] {
                 toolName: toolBlock.toolName,
                 toolUseId: toolBlock.toolUseId,
                 input: parsedInput,
+                parentToolUseId:
+                  typeof cliMsg.parent_tool_use_id === 'string'
+                    ? cliMsg.parent_tool_use_id
+                    : undefined,
               }]
             }
           }

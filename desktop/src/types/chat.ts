@@ -30,10 +30,10 @@ export type UIAttachment = {
 
 export type ServerMessage =
   | { type: 'connected'; sessionId: string }
-  | { type: 'content_start'; blockType: 'text' | 'tool_use'; toolName?: string; toolUseId?: string }
+  | { type: 'content_start'; blockType: 'text' | 'tool_use'; toolName?: string; toolUseId?: string; parentToolUseId?: string }
   | { type: 'content_delta'; text?: string; toolInput?: string }
-  | { type: 'tool_use_complete'; toolName: string; toolUseId: string; input: unknown }
-  | { type: 'tool_result'; toolUseId: string; content: unknown; isError: boolean }
+  | { type: 'tool_use_complete'; toolName: string; toolUseId: string; input: unknown; parentToolUseId?: string }
+  | { type: 'tool_result'; toolUseId: string; content: unknown; isError: boolean; parentToolUseId?: string }
   | { type: 'permission_request'; requestId: string; toolName: string; input: unknown; description?: string }
   | { type: 'message_complete'; usage: TokenUsage }
   | { type: 'thinking'; text: string }
@@ -76,8 +76,8 @@ export type UIMessage =
   | { id: string; type: 'user_text'; content: string; timestamp: number; attachments?: UIAttachment[] }
   | { id: string; type: 'assistant_text'; content: string; timestamp: number; model?: string }
   | { id: string; type: 'thinking'; content: string; timestamp: number }
-  | { id: string; type: 'tool_use'; toolName: string; toolUseId: string; input: unknown; timestamp: number }
-  | { id: string; type: 'tool_result'; toolUseId: string; content: unknown; isError: boolean; timestamp: number }
+  | { id: string; type: 'tool_use'; toolName: string; toolUseId: string; input: unknown; timestamp: number; parentToolUseId?: string }
+  | { id: string; type: 'tool_result'; toolUseId: string; content: unknown; isError: boolean; timestamp: number; parentToolUseId?: string }
   | { id: string; type: 'system'; content: string; timestamp: number }
   | { id: string; type: 'permission_request'; requestId: string; toolName: string; input: unknown; description?: string; timestamp: number }
   | { id: string; type: 'error'; message: string; code: string; timestamp: number }

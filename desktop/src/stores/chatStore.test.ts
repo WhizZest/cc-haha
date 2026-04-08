@@ -64,6 +64,7 @@ describe('chatStore history mapping', () => {
         type: 'assistant',
         timestamp: '2026-04-06T00:00:00.000Z',
         model: 'opus',
+        parentToolUseId: 'agent-1',
         content: [
           { type: 'thinking', thinking: 'internal reasoning' },
           { type: 'text', text: '目录结构分析' },
@@ -74,6 +75,7 @@ describe('chatStore history mapping', () => {
         id: 'user-1',
         type: 'user',
         timestamp: '2026-04-06T00:00:01.000Z',
+        parentToolUseId: 'agent-1',
         content: [
           { type: 'tool_result', tool_use_id: 'tool-1', content: 'ok', is_error: false },
         ],
@@ -87,6 +89,39 @@ describe('chatStore history mapping', () => {
       'assistant_text',
       'tool_use',
       'tool_result',
+    ])
+    expect(mapped[2]).toMatchObject({ parentToolUseId: 'agent-1' })
+    expect(mapped[3]).toMatchObject({ parentToolUseId: 'agent-1' })
+  })
+
+  it('keeps parent tool linkage for live tool events', () => {
+    useChatStore.getState().handleServerMessage({
+      type: 'tool_use_complete',
+      toolName: 'Read',
+      toolUseId: 'tool-1',
+      input: { file_path: 'src/App.tsx' },
+      parentToolUseId: 'agent-1',
+    })
+
+    useChatStore.getState().handleServerMessage({
+      type: 'tool_result',
+      toolUseId: 'tool-1',
+      content: 'ok',
+      isError: false,
+      parentToolUseId: 'agent-1',
+    })
+
+    expect(useChatStore.getState().messages).toMatchObject([
+      {
+        type: 'tool_use',
+        toolUseId: 'tool-1',
+        parentToolUseId: 'agent-1',
+      },
+      {
+        type: 'tool_result',
+        toolUseId: 'tool-1',
+        parentToolUseId: 'agent-1',
+      },
     ])
   })
 
