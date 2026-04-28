@@ -418,8 +418,11 @@ export const en = {
   // Settings > About
   'settings.tab.about': 'About',
   'settings.about.version': 'Version',
+  'settings.about.changelog': 'Release Notes',
   'settings.about.repo': 'GitHub Repository',
   'settings.about.starHint': 'If this project helps you, consider giving it a Star',
+  'settings.about.feedback': 'Report an Issue',
+  'settings.about.feedbackDesc': 'Open a GitHub Issue for bugs or usage questions',
   'settings.about.author': 'Author',
   'settings.about.socialMedia': 'Social Media',
   'settings.about.updates': 'App Updates',

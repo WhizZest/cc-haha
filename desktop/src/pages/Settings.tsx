@@ -384,6 +384,7 @@ function ProviderFormModal({ open, onClose, mode, provider, presets }: ProviderF
   const [baseUrl, setBaseUrl] = useState(provider?.baseUrl ?? initialPreset.baseUrl)
   const [apiFormat, setApiFormat] = useState<ApiFormat>(provider?.apiFormat ?? initialPreset.apiFormat ?? 'anthropic')
   const [apiKey, setApiKey] = useState(provider?.apiKey ?? '')
+  const [showApiKey, setShowApiKey] = useState(false)
   const [notes, setNotes] = useState(provider?.notes ?? '')
   const [models, setModels] = useState<ModelMapping>(provider?.models ?? { ...initialPreset.defaultModels })
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -624,14 +625,32 @@ function ProviderFormModal({ open, onClose, mode, provider, presets }: ProviderF
           </div>
         ) : null}
 
-        <Input
-          label={t('settings.providers.apiKey')}
-          required={mode === 'create' && requiresApiKey}
-          type="text"
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-          placeholder="sk-..."
-        />
+        <div className="flex flex-col gap-1">
+          <label htmlFor="provider-api-key" className="text-sm font-medium text-[var(--color-text-primary)]">
+            {t('settings.providers.apiKey')}
+            {mode === 'create' && requiresApiKey && <span className="text-[var(--color-error)] ml-0.5">*</span>}
+          </label>
+          <div className="relative">
+            <input
+              id="provider-api-key"
+              type={showApiKey ? 'text' : 'password'}
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="sk-..."
+              className="h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 pr-10 text-sm text-[var(--color-text-primary)] outline-none transition-colors duration-150 placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-border-focus)] focus:shadow-[var(--shadow-focus-ring)]"
+            />
+            <button
+              type="button"
+              onClick={() => setShowApiKey((visible) => !visible)}
+              aria-label={showApiKey ? 'Hide API Key' : 'Show API Key'}
+              className="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)] focus:outline-none focus:shadow-[var(--shadow-focus-ring)]"
+            >
+              <span className="material-symbols-outlined text-[16px]">
+                {showApiKey ? 'visibility_off' : 'visibility'}
+              </span>
+            </button>
+          </div>
+        </div>
 
         {(apiKeyUrl || promoText) && (
           <div className="-mt-2 flex flex-col gap-1.5">
@@ -1462,6 +1481,8 @@ function PluginSettings() {
 // ─── About Settings ──────────────────────────────────────
 
 const GITHUB_REPO = 'https://github.com/NanmiCoder/cc-haha'
+const GITHUB_ISSUES = `${GITHUB_REPO}/issues`
+const GITHUB_RELEASES = `${GITHUB_REPO}/releases`
 const AUTHOR_GITHUB = 'https://github.com/NanmiCoder'
 const SOCIAL_LINKS = [
   { name: 'Bilibili', icon: '/icons/bilibili.svg', url: 'https://space.bilibili.com/434377496', label: '程序员阿江-Relakkes' },
@@ -1544,7 +1565,16 @@ function AboutSettings() {
       <img src="/app-icon.png" alt="Claude Code Haha" className="w-20 h-20 mb-4" />
       <h1 className="text-xl font-bold text-[var(--color-text-primary)]">Claude Code Haha</h1>
       {version && (
-        <span className="text-xs text-[var(--color-text-tertiary)] mt-1">{t('settings.about.version')} {version}</span>
+        <div className="mt-1 flex items-center gap-2 text-xs text-[var(--color-text-tertiary)]">
+          <span>{t('settings.about.version')} {version}</span>
+          <span className="text-[var(--color-border)]">·</span>
+          <button
+            onClick={() => openUrl(GITHUB_RELEASES)}
+            className="rounded-[var(--radius-sm)] text-[var(--color-text-accent)] transition-colors hover:text-[var(--color-brand)] focus:outline-none focus:shadow-[var(--shadow-focus-ring)]"
+          >
+            {t('settings.about.changelog')}
+          </button>
+        </div>
       )}
 
       {/* GitHub Repo */}
@@ -1558,7 +1588,6 @@ function AboutSettings() {
             <div className="text-sm font-medium text-[var(--color-text-primary)]">NanmiCoder/cc-haha</div>
             <div className="text-xs text-[var(--color-text-tertiary)]">{t('settings.about.starHint')}</div>
           </div>
-          <span className="material-symbols-outlined text-[16px] text-[var(--color-text-tertiary)]">open_in_new</span>
         </button>
       </div>
 
@@ -1692,15 +1721,20 @@ function AboutSettings() {
               <span className="text-xs text-[var(--color-text-tertiary)] ml-auto">{link.name}</span>
             </button>
           ))}
-          <button
-            onClick={() => openUrl('mailto:relakkes@gmail.com')}
-            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg hover:bg-[var(--color-surface-hover)] transition-colors cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[16px] opacity-60">mail</span>
-            <span className="text-sm text-[var(--color-text-primary)]">relakkes@gmail.com</span>
-            <span className="text-xs text-[var(--color-text-tertiary)] ml-auto">Email</span>
-          </button>
         </div>
+      </div>
+
+      <div className="mt-6 w-full">
+        <button
+          onClick={() => openUrl(GITHUB_ISSUES)}
+          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-[var(--color-border)] hover:bg-[var(--color-surface-hover)] transition-colors cursor-pointer"
+        >
+          <span className="material-symbols-outlined text-[20px] text-[var(--color-text-tertiary)]">feedback</span>
+          <div className="flex-1 text-left">
+            <div className="text-sm font-medium text-[var(--color-text-primary)]">{t('settings.about.feedback')}</div>
+            <div className="text-xs text-[var(--color-text-tertiary)]">{t('settings.about.feedbackDesc')}</div>
+          </div>
+        </button>
       </div>
     </div>
   )

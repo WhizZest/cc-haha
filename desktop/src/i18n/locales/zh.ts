@@ -420,8 +420,11 @@ export const zh: Record<TranslationKey, string> = {
   // Settings > About
   'settings.tab.about': '关于',
   'settings.about.version': '版本',
+  'settings.about.changelog': '更新日志',
   'settings.about.repo': 'GitHub 仓库',
   'settings.about.starHint': '如果这个项目对你有帮助，欢迎给个 Star',
+  'settings.about.feedback': '反馈问题',
+  'settings.about.feedbackDesc': '遇到 Bug 或使用问题，前往 GitHub Issue 提交反馈',
   'settings.about.author': '作者',
   'settings.about.socialMedia': '社交媒体',
   'settings.about.updates': '应用更新',

@@ -252,6 +252,39 @@ describe('Settings > Providers tab', () => {
     expect(within(dialog).getByRole('button', { name: /OpenAI Responses API \(proxy\)/i })).toBeInTheDocument()
     expect(within(dialog).getByText('Requests will be translated via the local proxy')).toBeInTheDocument()
   })
+
+  it('hides the API key by default and reveals it from the eye button', () => {
+    providerStoreState.presets = [
+      {
+        id: 'custom',
+        name: 'Custom',
+        baseUrl: 'https://api.example.com/anthropic',
+        apiFormat: 'anthropic',
+        defaultModels: {
+          main: 'custom-main',
+          haiku: '',
+          sonnet: '',
+          opus: '',
+        },
+        needsApiKey: true,
+        websiteUrl: '',
+      },
+    ]
+
+    render(<Settings />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Add Provider/i }))
+
+    const dialog = screen.getByRole('dialog')
+    const apiKeyInput = within(dialog).getByPlaceholderText('sk-...')
+
+    expect(apiKeyInput).toHaveAttribute('type', 'password')
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Show API Key' }))
+
+    expect(apiKeyInput).toHaveAttribute('type', 'text')
+    expect(within(dialog).getByRole('button', { name: 'Hide API Key' })).toBeInTheDocument()
+  })
 })
 
 describe('Settings > About tab', () => {
