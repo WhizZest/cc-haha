@@ -20,13 +20,19 @@ import {
 import { getOauthProfileFromOauthToken } from '../../services/oauth/getOauthProfile.js'
 import { OAuthService } from '../../services/oauth/index.js'
 import type { OAuthTokens } from '../../services/oauth/types.js'
+import { OpenAIOAuthService } from '../../services/openaiAuth/index.js'
+import { getOpenAIOAuthTokens } from '../../services/openaiAuth/storage.js'
+import type { OpenAIOAuthTokens } from '../../services/openaiAuth/types.js'
 import {
+  clearStoredClaudeAIOAuthTokens,
   clearOAuthTokenCache,
   getAnthropicApiKeyWithSource,
   getAuthTokenSource,
+  getOpenAIAuthOverrideWarning,
   getOauthAccountInfo,
   getSubscriptionType,
   isUsing3PServices,
+  removeApiKey,
   saveOAuthTokensIfNeeded,
   validateForceLoginOrg,
 } from '../../utils/auth.js'
@@ -109,17 +115,75 @@ export async function installOAuthTokens(tokens: OAuthTokens): Promise<void> {
   await clearAuthRelatedCaches()
 }
 
+export async function installOpenAIOAuthTokens(
+  tokens: OpenAIOAuthTokens,
+): Promise<string | null> {
+  await removeApiKey()
+  const clearClaudeOauth = clearStoredClaudeAIOAuthTokens()
+  if (!clearClaudeOauth.success) {
+    throw new Error(
+      clearClaudeOauth.warning ?? 'Failed to disable existing Claude auth state',
+    )
+  }
+
+  saveGlobalConfig(current => ({
+    ...current,
+    oauthAccount: undefined,
+  }))
+
+  if (!tokens.refreshToken) {
+    throw new Error('OpenAI OAuth tokens are incomplete.')
+  }
+
+  await clearAuthRelatedCaches()
+  return getOpenAIAuthOverrideWarning()
+}
+
 export async function authLogin({
   email,
   sso,
   console: useConsole,
   claudeai,
+  openai,
 }: {
   email?: string
   sso?: boolean
   console?: boolean
   claudeai?: boolean
+  openai?: boolean
 }): Promise<void> {
+  if (openai) {
+    if (email || sso || useConsole || claudeai) {
+      process.stderr.write(
+        'Error: --openai cannot be combined with --email, --sso, --console, or --claudeai.\n',
+      )
+      process.exit(1)
+    }
+
+    const openaiOAuthService = new OpenAIOAuthService()
+
+    try {
+      const tokens = await openaiOAuthService.startOAuthFlow(async url => {
+        process.stdout.write('Opening browser to sign in to OpenAI…\n')
+        process.stdout.write(`If the browser did not open, visit: ${url}\n`)
+      })
+
+      const warning = await installOpenAIOAuthTokens(tokens)
+
+      process.stdout.write('OpenAI login successful.\n')
+      if (warning) {
+        process.stdout.write(`${warning}\n`)
+      }
+      process.exit(0)
+    } catch (err) {
+      logError(err)
+      process.stderr.write(`OpenAI login failed: ${errorMessage(err)}\n`)
+      process.exit(1)
+    } finally {
+      openaiOAuthService.cleanup()
+    }
+  }
+
   if (useConsole && claudeai) {
     process.stderr.write(
       'Error: --console and --claudeai cannot be used together.\n',
@@ -232,7 +296,52 @@ export async function authLogin({
 export async function authStatus(opts: {
   json?: boolean
   text?: boolean
+  openai?: boolean
 }): Promise<void> {
+  if (opts.openai) {
+    const openaiTokens = getOpenAIOAuthTokens()
+    const loggedIn =
+      !!openaiTokens &&
+      openaiTokens.refreshToken.length > 0 &&
+      openaiTokens.expiresAt > 0
+
+    if (opts.text) {
+      if (!loggedIn) {
+        process.stdout.write(
+          'Not logged in to OpenAI. Run claude auth login --openai to authenticate.\n',
+        )
+      } else {
+        process.stdout.write('Provider: openai\n')
+        if (openaiTokens.email) {
+          process.stdout.write(`Email: ${openaiTokens.email}\n`)
+        }
+        if (openaiTokens.accountId) {
+          process.stdout.write(`Account ID: ${openaiTokens.accountId}\n`)
+        }
+        process.stdout.write(
+          `Expires At: ${new Date(openaiTokens.expiresAt).toISOString()}\n`,
+        )
+      }
+    } else {
+      process.stdout.write(
+        jsonStringify(
+          {
+            loggedIn,
+            authMethod: loggedIn ? 'openai_oauth' : 'none',
+            provider: 'openai',
+            email: openaiTokens?.email ?? null,
+            accountId: openaiTokens?.accountId ?? null,
+            expiresAt: openaiTokens?.expiresAt ?? null,
+          },
+          null,
+          2,
+        ) + '\n',
+      )
+    }
+
+    process.exit(loggedIn ? 0 : 1)
+  }
+
   const { source: authTokenSource, hasToken } = getAuthTokenSource()
   const { source: apiKeySource } = getAnthropicApiKeyWithSource()
   const hasApiKeyEnvVar =
@@ -240,12 +349,25 @@ export async function authStatus(opts: {
   const oauthAccount = getOauthAccountInfo()
   const subscriptionType = getSubscriptionType()
   const using3P = isUsing3PServices()
+  const openaiTokens = getOpenAIOAuthTokens()
+  const usingOpenAI =
+    !!openaiTokens?.refreshToken &&
+    !hasToken &&
+    apiKeySource === 'none' &&
+    !hasApiKeyEnvVar &&
+    !using3P
   const loggedIn =
-    hasToken || apiKeySource !== 'none' || hasApiKeyEnvVar || using3P
+    hasToken ||
+    apiKeySource !== 'none' ||
+    hasApiKeyEnvVar ||
+    using3P ||
+    usingOpenAI
 
   // Determine auth method
   let authMethod: string = 'none'
-  if (using3P) {
+  if (usingOpenAI) {
+    authMethod = 'openai_oauth'
+  } else if (using3P) {
     authMethod = 'third_party'
   } else if (authTokenSource === 'claude.ai') {
     authMethod = 'claude.ai'
@@ -311,6 +433,11 @@ export async function authStatus(opts: {
       output.orgId = oauthAccount?.organizationUuid ?? null
       output.orgName = oauthAccount?.organizationName ?? null
       output.subscriptionType = subscriptionType ?? null
+    } else if (authMethod === 'openai_oauth') {
+      output.provider = 'openai'
+      output.email = openaiTokens?.email ?? null
+      output.accountId = openaiTokens?.accountId ?? null
+      output.subscriptionType = 'ChatGPT Pro/Plus'
     }
 
     process.stdout.write(jsonStringify(output, null, 2) + '\n')
@@ -318,7 +445,18 @@ export async function authStatus(opts: {
   process.exit(loggedIn ? 0 : 1)
 }
 
-export async function authLogout(): Promise<void> {
+export async function authLogout(opts?: { openai?: boolean }): Promise<void> {
+  if (opts?.openai) {
+    const openaiOAuthService = new OpenAIOAuthService()
+    const success = openaiOAuthService.logout()
+    if (!success) {
+      process.stderr.write('Failed to log out from OpenAI.\n')
+      process.exit(1)
+    }
+    process.stdout.write('Successfully logged out from your OpenAI account.\n')
+    process.exit(0)
+  }
+
   try {
     await performLogout({ clearOnboarding: false })
   } catch {

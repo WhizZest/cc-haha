@@ -10,7 +10,6 @@ import type {
   AnthropicMessage,
   OpenAIResponsesRequest,
   OpenAIResponsesInputItem,
-  OpenAITool,
   OpenAIChatContentPart,
 } from './types.js'
 
@@ -29,6 +28,7 @@ export function anthropicToOpenaiResponses(body: AnthropicRequest): OpenAIRespon
     model: body.model,
     input,
     stream: body.stream,
+    store: false,
   }
 
   // system → instructions
@@ -51,13 +51,11 @@ export function anthropicToOpenaiResponses(body: AnthropicRequest): OpenAIRespon
   if (body.tools && body.tools.length > 0) {
     result.tools = body.tools
       .filter((t) => t.name !== 'BatchTool')
-      .map((t): OpenAITool => ({
+      .map((t) => ({
         type: 'function',
-        function: {
-          name: t.name,
-          description: t.description,
-          parameters: t.input_schema,
-        },
+        name: t.name,
+        description: t.description,
+        parameters: t.input_schema,
       }))
   }
 

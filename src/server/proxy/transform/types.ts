@@ -110,11 +110,17 @@ export type OpenAIResponsesRequest = {
   model: string
   input: OpenAIResponsesInputItem[]
   instructions?: string
+  store?: boolean
   max_output_tokens?: number
   temperature?: number
   top_p?: number
   stream?: boolean
-  tools?: OpenAITool[]
+  tools?: Array<{
+    type: 'function'
+    name: string
+    description?: string
+    parameters?: Record<string, unknown>
+  }>
   tool_choice?: unknown
   reasoning?: { effort?: 'low' | 'medium' | 'high' }
 }

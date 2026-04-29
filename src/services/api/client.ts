@@ -22,6 +22,11 @@ import {
   getSessionId,
 } from '../../bootstrap/state.js'
 import { getOauthConfig } from '../../constants/oauth.js'
+import {
+  buildOpenAICodexFetch,
+  OPENAI_OAUTH_DUMMY_KEY,
+  shouldUseOpenAICodexAuth,
+} from '../openaiAuth/fetch.js'
 import { isDebugToStdErr, logForDebugging } from '../../utils/debug.js'
 import {
   getAWSRegion,
@@ -132,11 +137,19 @@ export async function getAnthropicClient({
   await checkAndRefreshOAuthTokenIfNeeded()
   logForDebugging('[API:auth] OAuth token check complete')
 
-  if (!isClaudeAISubscriber()) {
+  const usingOpenAICodex =
+    shouldUseOpenAICodexAuth() &&
+    !isClaudeAISubscriber() &&
+    !process.env.ANTHROPIC_AUTH_TOKEN &&
+    !(apiKey || getAnthropicApiKey())
+
+  if (!isClaudeAISubscriber() && !usingOpenAICodex) {
     await configureApiKeyHeaders(defaultHeaders, getIsNonInteractiveSession())
   }
 
-  const resolvedFetch = buildFetch(fetchOverride, source)
+  const resolvedFetch = usingOpenAICodex
+    ? buildOpenAICodexFetch(fetchOverride, source)
+    : buildFetch(fetchOverride, source)
 
   const ARGS = {
     defaultHeaders,
@@ -299,7 +312,11 @@ export async function getAnthropicClient({
 
   // Determine authentication method based on available tokens
   const clientConfig: ConstructorParameters<typeof Anthropic>[0] = {
-    apiKey: isClaudeAISubscriber() ? null : apiKey || getAnthropicApiKey(),
+    apiKey: isClaudeAISubscriber()
+      ? null
+      : usingOpenAICodex
+        ? OPENAI_OAUTH_DUMMY_KEY
+        : apiKey || getAnthropicApiKey(),
     authToken: isClaudeAISubscriber()
       ? getClaudeAIOAuthTokens()?.accessToken
       : undefined,

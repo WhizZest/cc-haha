@@ -4141,16 +4141,18 @@ async function run(): Promise<CommanderCommand> {
   // claude auth
 
   const auth = program.command('auth').description('Manage authentication').configureHelp(createSortedHelpConfig());
-  auth.command('login').description('Sign in to your Anthropic account').option('--email <email>', 'Pre-populate email address on the login page').option('--sso', 'Force SSO login flow').option('--console', 'Use Anthropic Console (API usage billing) instead of Claude subscription').option('--claudeai', 'Use Claude subscription (default)').action(async ({
+  auth.command('login').description('Sign in to your Anthropic or OpenAI account').option('--email <email>', 'Pre-populate email address on the login page').option('--sso', 'Force SSO login flow').option('--console', 'Use Anthropic Console (API usage billing) instead of Claude subscription').option('--claudeai', 'Use Claude subscription (default)').option('--openai', 'Use OpenAI ChatGPT/Codex OAuth login').action(async ({
     email,
     sso,
     console: useConsole,
-    claudeai
+    claudeai,
+    openai,
   }: {
     email?: string;
     sso?: boolean;
     console?: boolean;
     claudeai?: boolean;
+    openai?: boolean;
   }) => {
     const {
       authLogin
@@ -4159,23 +4161,27 @@ async function run(): Promise<CommanderCommand> {
       email,
       sso,
       console: useConsole,
-      claudeai
+      claudeai,
+      openai,
     });
   });
-  auth.command('status').description('Show authentication status').option('--json', 'Output as JSON (default)').option('--text', 'Output as human-readable text').action(async (opts: {
+  auth.command('status').description('Show authentication status').option('--json', 'Output as JSON (default)').option('--text', 'Output as human-readable text').option('--openai', 'Show OpenAI OAuth status').action(async (opts: {
     json?: boolean;
     text?: boolean;
+    openai?: boolean;
   }) => {
     const {
       authStatus
     } = await import('./cli/handlers/auth.js');
     await authStatus(opts);
   });
-  auth.command('logout').description('Log out from your Anthropic account').action(async () => {
+  auth.command('logout').description('Log out from your Anthropic or OpenAI account').option('--openai', 'Log out from OpenAI OAuth only').action(async (opts: {
+    openai?: boolean;
+  }) => {
     const {
       authLogout
     } = await import('./cli/handlers/auth.js');
-    await authLogout();
+    await authLogout(opts);
   });
 
   /**

@@ -3,6 +3,7 @@ import { getInitialMainLoopModel } from '../../bootstrap/state.js'
 import {
   isClaudeAISubscriber,
   isMaxSubscriber,
+  isOpenAIAuthActive,
   isTeamPremiumSubscriber,
 } from '../auth.js'
 import { getModelStrings } from './modelStrings.js'
@@ -32,6 +33,7 @@ import {
 } from './model.js'
 import { has1mContext } from '../context.js'
 import { getGlobalConfig } from '../config.js'
+import { OPENAI_CODEX_MODEL_CATALOG } from '../../services/openaiAuth/models.js'
 
 // @[MODEL LAUNCH]: Update all the available and default model option strings below.
 
@@ -52,6 +54,18 @@ export function getDefaultOptionForUser(fastMode = false): ModelOption {
       label: 'Default (recommended)',
       description: `Use the default model for Ants (currently ${currentModel})`,
       descriptionForModel: `Default model (currently ${currentModel})`,
+    }
+  }
+
+  if (isOpenAIAuthActive()) {
+    const currentModel = renderDefaultModelSetting(
+      getDefaultMainLoopModelSetting(),
+    )
+    return {
+      value: null,
+      label: 'Default (recommended)',
+      description: `Use the OpenAI/Codex default model (currently ${currentModel})`,
+      descriptionForModel: `OpenAI/Codex default model (currently ${currentModel})`,
     }
   }
 
@@ -295,6 +309,18 @@ function getAzureOpenAICodexOptions(): ModelOption[] {
   ]
 }
 
+function getOpenAIModelOptions(): ModelOption[] {
+  return [
+    getDefaultOptionForUser(),
+    ...OPENAI_CODEX_MODEL_CATALOG.map(model => ({
+      value: model.value,
+      label: model.label,
+      description: model.description,
+      descriptionForModel: model.descriptionForModel,
+    })),
+  ]
+}
+
 // @[MODEL LAUNCH]: Update the model picker lists below to include/reorder options for the new model.
 // Each user tier (ant, Max/Team Premium, Pro/Team Standard/Enterprise, PAYG 1P, PAYG 3P) has its own list.
 function getModelOptionsBase(fastMode = false): ModelOption[] {
@@ -318,6 +344,10 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
       getSonnet46_1MOption(),
       getHaiku45Option(),
     ]
+  }
+
+  if (isOpenAIAuthActive()) {
+    return getOpenAIModelOptions()
   }
 
   if (isClaudeAISubscriber()) {

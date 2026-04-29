@@ -203,10 +203,16 @@ export function buildAccountProperties(): Property[] {
     return [];
   }
   const properties: Property[] = [];
+  if (accountInfo.provider === 'openai') {
+    properties.push({
+      label: 'Provider',
+      value: 'OpenAI/Codex'
+    });
+  }
   if (accountInfo.subscription) {
     properties.push({
-      label: 'Login method',
-      value: `${accountInfo.subscription} Account`
+      label: accountInfo.provider === 'openai' ? 'Subscription' : 'Login method',
+      value: accountInfo.provider === 'openai' ? accountInfo.subscription : `${accountInfo.subscription} Account`
     });
   }
   if (accountInfo.tokenSource) {
@@ -233,6 +239,12 @@ export function buildAccountProperties(): Property[] {
     properties.push({
       label: 'Email',
       value: accountInfo.email
+    });
+  }
+  if (accountInfo.accountId && !process.env.IS_DEMO) {
+    properties.push({
+      label: 'Account ID',
+      value: accountInfo.accountId
     });
   }
   return properties;

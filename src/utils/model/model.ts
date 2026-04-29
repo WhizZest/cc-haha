@@ -10,6 +10,7 @@ import {
   getSubscriptionType,
   isClaudeAISubscriber,
   isMaxSubscriber,
+  isOpenAIAuthActive,
   isProSubscriber,
   isTeamPremiumSubscriber,
 } from '../auth.js'
@@ -27,6 +28,10 @@ import { getAPIProvider } from './providers.js'
 import { LIGHTNING_BOLT } from '../../constants/figures.js'
 import { isModelAllowed } from './modelAllowlist.js'
 import { type ModelAlias, isModelAlias } from './aliases.js'
+import {
+  getOpenAIModelDisplayName,
+  resolveOpenAICodexModel,
+} from '../../services/openaiAuth/models.js'
 import { capitalize } from '../stringUtils.js'
 
 export type ModelShortName = string
@@ -103,6 +108,9 @@ export function getBestModel(): ModelName {
 
 // @[MODEL LAUNCH]: Update the default Opus model (3P providers may lag so keep defaults unchanged).
 export function getDefaultOpusModel(): ModelName {
+  if (isOpenAIAuthActive()) {
+    return resolveOpenAICodexModel('opus')
+  }
   if (process.env.ANTHROPIC_DEFAULT_OPUS_MODEL) {
     return process.env.ANTHROPIC_DEFAULT_OPUS_MODEL
   }
@@ -117,6 +125,9 @@ export function getDefaultOpusModel(): ModelName {
 
 // @[MODEL LAUNCH]: Update the default Sonnet model (3P providers may lag so keep defaults unchanged).
 export function getDefaultSonnetModel(): ModelName {
+  if (isOpenAIAuthActive()) {
+    return resolveOpenAICodexModel('sonnet')
+  }
   if (process.env.ANTHROPIC_DEFAULT_SONNET_MODEL) {
     return process.env.ANTHROPIC_DEFAULT_SONNET_MODEL
   }
@@ -129,6 +140,9 @@ export function getDefaultSonnetModel(): ModelName {
 
 // @[MODEL LAUNCH]: Update the default Haiku model (3P providers may lag so keep defaults unchanged).
 export function getDefaultHaikuModel(): ModelName {
+  if (isOpenAIAuthActive()) {
+    return resolveOpenAICodexModel('haiku')
+  }
   if (process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL) {
     return process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL
   }
@@ -186,6 +200,10 @@ export function getDefaultMainLoopModelSetting(): ModelName | ModelAlias {
       getAntModelOverrideConfig()?.defaultModel ??
       getDefaultOpusModel() + '[1m]'
     )
+  }
+
+  if (isOpenAIAuthActive()) {
+    return resolveOpenAICodexModel('opus')
   }
 
   // Max users get Opus as default
@@ -290,6 +308,12 @@ export function getCanonicalName(fullModelName: ModelName): ModelShortName {
 export function getClaudeAiUserDefaultModelDescription(
   fastMode = false,
 ): string {
+  if (isOpenAIAuthActive()) {
+    const defaultModel = renderDefaultModelSetting(
+      getDefaultMainLoopModelSetting(),
+    )
+    return `${defaultModel} · OpenAI/Codex default`
+  }
   if (isMaxSubscriber() || isTeamPremiumSubscriber()) {
     if (isOpus1mMergeEnabled()) {
       return `Opus 4.7 with 1M context · Most capable for complex work${fastMode ? getOpus46PricingSuffix(true) : ''}`
@@ -351,6 +375,10 @@ export function renderModelSetting(setting: ModelName | ModelAlias): string {
  * if the model is not recognized as a public model.
  */
 export function getPublicModelDisplayName(model: ModelName): string | null {
+  const openAIModelName = getOpenAIModelDisplayName(model)
+  if (openAIModelName) {
+    return openAIModelName
+  }
   switch (model) {
     case getModelStrings().opus46:
       return 'Opus 4.7'
@@ -572,6 +600,10 @@ export function modelDisplayString(model: ModelSetting): string {
 
 // @[MODEL LAUNCH]: Add a marketing name mapping for the new model below.
 export function getMarketingNameForModel(modelId: string): string | undefined {
+  const openAIModelName = getOpenAIModelDisplayName(modelId)
+  if (openAIModelName) {
+    return openAIModelName
+  }
   if (getAPIProvider() === 'foundry') {
     // deployment ID is user-defined in Foundry, so it may have no relation to the actual model
     return undefined

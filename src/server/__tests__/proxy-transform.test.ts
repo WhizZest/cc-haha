@@ -303,8 +303,31 @@ describe('anthropicToOpenaiResponses', () => {
     const result = anthropicToOpenaiResponses(req)
     expect(result.model).toBe('gpt-4o')
     expect(result.instructions).toBe('Be helpful')
+    expect(result.store).toBe(false)
+    expect(result.tools).toBeUndefined()
     expect(result.max_output_tokens).toBeUndefined()
     expect(result.input).toEqual([{ type: 'message', role: 'user', content: 'Hello' }])
+  })
+
+  test('tools conversion uses top-level name', () => {
+    const req: AnthropicRequest = {
+      model: 'gpt-4o',
+      max_tokens: 100,
+      messages: [{ role: 'user', content: 'Hi' }],
+      tools: [{
+        name: 'get_weather',
+        description: 'Get weather',
+        input_schema: { type: 'object', properties: { city: { type: 'string' } } },
+      }],
+    }
+    const result = anthropicToOpenaiResponses(req)
+    expect(result.tools).toHaveLength(1)
+    expect(result.tools![0]).toEqual({
+      type: 'function',
+      name: 'get_weather',
+      description: 'Get weather',
+      parameters: { type: 'object', properties: { city: { type: 'string' } } },
+    })
   })
 
   test('tool_use lifted to function_call', () => {
