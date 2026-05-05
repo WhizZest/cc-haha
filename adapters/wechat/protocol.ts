@@ -275,7 +275,7 @@ export async function sendWechatText(params: {
     base_info: buildBaseInfo(),
   }
 
-  await apiPostFetch({
+  const rawText = await apiPostFetch({
     baseUrl: params.baseUrl,
     endpoint: 'ilink/bot/sendmessage',
     body: JSON.stringify(body),
@@ -283,6 +283,7 @@ export async function sendWechatText(params: {
     timeoutMs: params.timeoutMs ?? API_TIMEOUT_MS,
     label: 'wechatSendMessage',
   })
+  assertWechatApiOk(rawText, 'wechatSendMessage')
 }
 
 export async function getWechatConfig(params: {
@@ -315,7 +316,7 @@ export async function sendWechatTyping(params: {
   status: 'typing' | 'cancel'
   timeoutMs?: number
 }): Promise<void> {
-  await apiPostFetch({
+  const rawText = await apiPostFetch({
     baseUrl: params.baseUrl,
     endpoint: 'ilink/bot/sendtyping',
     body: JSON.stringify({
@@ -328,6 +329,7 @@ export async function sendWechatTyping(params: {
     timeoutMs: params.timeoutMs ?? 10_000,
     label: 'wechatSendTyping',
   })
+  assertWechatApiOk(rawText, 'wechatSendTyping')
 }
 
 async function pollQrStatus(apiBaseUrl: string, qrcode: string): Promise<QrStatusResponse> {
@@ -426,6 +428,30 @@ function ensureTrailingSlash(url: string): string {
 function randomWechatUin(): string {
   const uint32 = crypto.randomBytes(4).readUInt32BE(0)
   return Buffer.from(String(uint32), 'utf-8').toString('base64')
+}
+
+function assertWechatApiOk(rawText: string, label: string): void {
+  if (!rawText.trim()) return
+
+  let body: unknown
+  try {
+    body = JSON.parse(rawText)
+  } catch {
+    return
+  }
+
+  if (!body || typeof body !== 'object') return
+
+  const record = body as Record<string, unknown>
+  const code = typeof record.ret === 'number'
+    ? record.ret
+    : typeof record.errcode === 'number'
+      ? record.errcode
+      : 0
+  if (code === 0) return
+
+  const message = typeof record.errmsg === 'string' ? record.errmsg : rawText
+  throw new Error(`${label} returned ${code}: ${message}`)
 }
 
 function isLoginFresh(login: ActiveLogin): boolean {

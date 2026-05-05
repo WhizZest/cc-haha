@@ -20,6 +20,7 @@ import { AdapterHttpClient } from '../common/http-client.js'
 import { isAllowedUser, tryPair } from '../common/pairing.js'
 import { AttachmentStore } from '../common/attachment/attachment-store.js'
 import { checkAttachmentLimit } from '../common/attachment/attachment-limits.js'
+import { WechatTypingController } from './typing.js'
 import {
   extractWechatText,
   getWechatConfig,
@@ -56,6 +57,7 @@ const blockBuffers = new Map<string, MessageBuffer>()
 const contextTokens = new Map<string, string>()
 const typingTickets = new Map<string, string>()
 const pendingPermissions = new Map<string, Set<string>>()
+const typingController = new WechatTypingController(sendTypingIndicator)
 
 let getUpdatesBuf = ''
 let stopped = false
@@ -84,13 +86,24 @@ async function sendText(chatId: string, text: string): Promise<void> {
   const chunks = splitMessage(text, WECHAT_TEXT_LIMIT)
   const contextToken = contextTokens.get(chatId)
   for (const chunk of chunks) {
-    await sendWechatText({
-      baseUrl,
-      token: botToken,
-      to: chatId,
-      text: chunk,
-      contextToken,
-    })
+    try {
+      await sendWechatText({
+        baseUrl,
+        token: botToken,
+        to: chatId,
+        text: chunk,
+        contextToken,
+      })
+    } catch (err) {
+      if (!contextToken) throw err
+      console.warn('[WeChat] sendText with context token failed, retrying without context:', err instanceof Error ? err.message : err)
+      await sendWechatText({
+        baseUrl,
+        token: botToken,
+        to: chatId,
+        text: chunk,
+      })
+    }
   }
   console.log(`[WeChat] Sent ${chunks.length} message chunk(s) to ${redactChatId(chatId)}`)
 }
@@ -112,17 +125,7 @@ function getBlockBuffer(chatId: string): MessageBuffer {
 
 async function sendTypingIndicator(chatId: string, status: 'typing' | 'cancel'): Promise<void> {
   try {
-    let typingTicket = typingTickets.get(chatId)
-    if (!typingTicket && status === 'typing') {
-      const configResp = await getWechatConfig({
-        baseUrl,
-        token: botToken,
-        ilinkUserId: chatId,
-        contextToken: contextTokens.get(chatId),
-      })
-      typingTicket = configResp.typing_ticket
-      if (typingTicket) typingTickets.set(chatId, typingTicket)
-    }
+    const typingTicket = await getTypingTicket(chatId, status)
     if (!typingTicket) return
     await sendWechatTyping({
       baseUrl,
@@ -132,18 +135,71 @@ async function sendTypingIndicator(chatId: string, status: 'typing' | 'cancel'):
       status,
     })
   } catch (err) {
+    typingTickets.delete(chatId)
+    if (status === 'typing') {
+      try {
+        const typingTicket = await getTypingTicket(chatId, status)
+        if (!typingTicket) return
+        await sendWechatTyping({
+          baseUrl,
+          token: botToken,
+          ilinkUserId: chatId,
+          typingTicket,
+          status,
+        })
+        return
+      } catch {
+        // Fall through to the warning below with the original error.
+      }
+    }
     console.warn('[WeChat] sendTyping failed:', err instanceof Error ? err.message : err)
   }
+}
+
+async function getTypingTicket(chatId: string, status: 'typing' | 'cancel'): Promise<string | null> {
+  let typingTicket = typingTickets.get(chatId)
+  if (!typingTicket && status === 'typing') {
+    const configResp = await getWechatConfig({
+      baseUrl,
+      token: botToken,
+      ilinkUserId: chatId,
+      contextToken: contextTokens.get(chatId),
+    })
+    if (typeof configResp.ret === 'number' && configResp.ret !== 0) {
+      throw new Error(`getconfig returned ${configResp.ret}: ${configResp.errmsg ?? ''}`)
+    }
+    typingTicket = configResp.typing_ticket
+    if (typingTicket) typingTickets.set(chatId, typingTicket)
+  }
+  return typingTicket || null
 }
 
 function clearTransientChatState(chatId: string): void {
   blockBuffers.get(chatId)?.reset()
   blockBuffers.delete(chatId)
   pendingPermissions.delete(chatId)
+  typingController.stop(chatId)
   const runtime = getRuntimeState(chatId)
   runtime.state = 'idle'
   runtime.verb = undefined
   runtime.pendingPermissionCount = 0
+}
+
+function enqueueWechat(chatId: string, task: () => Promise<void>): void {
+  enqueue(chatId, async () => {
+    try {
+      await task()
+    } catch (err) {
+      typingController.stop(chatId)
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(`[WeChat] Failed to handle message for ${redactChatId(chatId)}:`, err)
+      try {
+        await sendText(chatId, `处理消息失败：${message}`)
+      } catch (sendErr) {
+        console.error(`[WeChat] Failed to report message handling error for ${redactChatId(chatId)}:`, sendErr)
+      }
+    }
+  })
 }
 
 async function ensureExistingSession(chatId: string): Promise<{ sessionId: string; workDir: string } | null> {
@@ -176,6 +232,29 @@ async function buildStatusText(chatId: string): Promise<string> {
     // Keep IM status best-effort.
   }
 
+  let taskCounts:
+    | {
+        total: number
+        pending: number
+        inProgress: number
+        completed: number
+      }
+    | undefined
+
+  try {
+    const tasks = await httpClient.getTasksForSession(stored.sessionId)
+    if (tasks.length > 0) {
+      taskCounts = {
+        total: tasks.length,
+        pending: tasks.filter((task) => task.status === 'pending').length,
+        inProgress: tasks.filter((task) => task.status === 'in_progress').length,
+        completed: tasks.filter((task) => task.status === 'completed').length,
+      }
+    }
+  } catch {
+    // Keep IM status best-effort.
+  }
+
   return formatImStatus({
     sessionId: stored.sessionId,
     projectName,
@@ -184,6 +263,7 @@ async function buildStatusText(chatId: string): Promise<string> {
     state: runtime.state,
     verb: runtime.verb,
     pendingPermissionCount: runtime.pendingPermissionCount,
+    taskCounts,
   })
 }
 
@@ -287,15 +367,34 @@ async function handleServerMessage(chatId: string, msg: ServerMessage): Promise<
       runtime.state = msg.state
       runtime.verb = typeof msg.verb === 'string' ? msg.verb : undefined
       if (msg.state === 'thinking' || msg.state === 'tool_executing') {
-        void sendTypingIndicator(chatId, 'typing')
+        typingController.start(chatId)
       } else if (msg.state === 'idle') {
-        void sendTypingIndicator(chatId, 'cancel')
+        typingController.stop(chatId)
+      }
+      break
+    case 'content_start':
+      if (msg.blockType === 'text') {
+        runtime.state = 'streaming'
+      } else if (msg.blockType === 'tool_use') {
+        runtime.state = 'tool_executing'
+        runtime.verb = typeof msg.toolName === 'string' ? msg.toolName : runtime.verb
+        typingController.start(chatId)
       }
       break
     case 'content_delta':
       if (typeof msg.text === 'string' && msg.text) {
         getBlockBuffer(chatId).append(msg.text)
       }
+      break
+    case 'tool_use_complete':
+      runtime.state = 'tool_executing'
+      runtime.verb = typeof msg.toolName === 'string' ? msg.toolName : runtime.verb
+      typingController.start(chatId)
+      break
+    case 'tool_result':
+      runtime.state = 'thinking'
+      runtime.verb = undefined
+      typingController.start(chatId)
       break
     case 'permission_request': {
       runtime.pendingPermissionCount += 1
@@ -306,6 +405,7 @@ async function handleServerMessage(chatId: string, msg: ServerMessage): Promise<
         pendingPermissions.set(chatId, pending)
       }
       pending.add(msg.requestId)
+      typingController.stop(chatId)
       await sendText(
         chatId,
         `${formatPermissionRequest(msg.toolName, msg.input, msg.requestId)}\n\n${formatPermissionInstructions(msg.requestId)}`,
@@ -315,7 +415,7 @@ async function handleServerMessage(chatId: string, msg: ServerMessage): Promise<
     case 'message_complete': {
       runtime.state = 'idle'
       runtime.verb = undefined
-      void sendTypingIndicator(chatId, 'cancel')
+      typingController.stop(chatId)
       await blockBuffers.get(chatId)?.complete()
       blockBuffers.delete(chatId)
       break
@@ -323,7 +423,7 @@ async function handleServerMessage(chatId: string, msg: ServerMessage): Promise<
     case 'error':
       runtime.state = 'idle'
       runtime.verb = undefined
-      void sendTypingIndicator(chatId, 'cancel')
+      typingController.stop(chatId)
       blockBuffers.get(chatId)?.reset()
       blockBuffers.delete(chatId)
       await sendText(chatId, `错误: ${msg.message}`)
@@ -362,7 +462,7 @@ async function routeUserMessage(message: WechatMessage): Promise<void> {
     return
   }
 
-  enqueue(chatId, async () => {
+  enqueueWechat(chatId, async () => {
     const hasAttachments = mediaCandidates.length > 0
     if (!hasAttachments && (text === '/help' || text === '帮助')) {
       await sendText(chatId, formatImHelp())
@@ -429,7 +529,7 @@ async function routeUserMessage(message: WechatMessage): Promise<void> {
     const attachments = await collectAttachments(chatId, mediaCandidates)
     const effectiveText = text || (attachments.length > 0 ? '(用户发送了附件)' : '')
     if (!effectiveText && attachments.length === 0) return
-    void sendTypingIndicator(chatId, 'typing')
+    typingController.start(chatId)
     const sent = bridge.sendUserMessage(chatId, effectiveText, attachments.length ? attachments : undefined)
     if (!sent) await sendText(chatId, '消息发送失败，连接可能已断开。请发送 /new 重新开始。')
   })
@@ -525,6 +625,7 @@ void pollLoop()
 process.on('SIGINT', () => {
   console.log('[WeChat] Shutting down...')
   stopped = true
+  typingController.destroy()
   bridge.destroy()
   dedup.destroy()
   process.exit(0)

@@ -1,6 +1,12 @@
-import { describe, expect, it } from 'bun:test'
-import { buildClientVersion, extractWechatText } from '../protocol.js'
+import { afterEach, describe, expect, it } from 'bun:test'
+import { buildClientVersion, extractWechatText, sendWechatText, sendWechatTyping } from '../protocol.js'
 import { collectWechatMediaCandidates } from '../media.js'
+
+const originalFetch = globalThis.fetch
+
+afterEach(() => {
+  globalThis.fetch = originalFetch
+})
 
 describe('WeChat protocol helpers', () => {
   it('encodes iLink client versions like the OpenClaw Weixin plugin', () => {
@@ -70,5 +76,48 @@ describe('WeChat protocol helpers', () => {
         mimeType: 'application/pdf',
       },
     ])
+  })
+
+  it('throws when sendmessage returns a non-zero WeChat ret code', async () => {
+    globalThis.fetch = (async () => new Response(JSON.stringify({ ret: 40001, errmsg: 'bad context_token' }), { status: 200 })) as unknown as typeof fetch
+
+    await expect(sendWechatText({
+      baseUrl: 'https://api.example.com',
+      token: 'token',
+      to: 'user',
+      text: 'hello',
+      contextToken: 'stale-context',
+    })).rejects.toThrow('wechatSendMessage returned 40001: bad context_token')
+  })
+
+  it('allows successful sendmessage responses', async () => {
+    const requests: string[] = []
+    globalThis.fetch = (async (_url: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      requests.push(String(init?.body ?? ''))
+      return new Response(JSON.stringify({ ret: 0 }), { status: 200 })
+    }) as unknown as typeof fetch
+
+    await sendWechatText({
+      baseUrl: 'https://api.example.com',
+      token: 'token',
+      to: 'user',
+      text: 'hello',
+      contextToken: 'ctx',
+    })
+
+    expect(requests).toHaveLength(1)
+    expect(JSON.parse(requests[0]!).msg.context_token).toBe('ctx')
+  })
+
+  it('throws when sendtyping returns a non-zero WeChat ret code', async () => {
+    globalThis.fetch = (async () => new Response(JSON.stringify({ ret: 42001, errmsg: 'typing ticket expired' }), { status: 200 })) as unknown as typeof fetch
+
+    await expect(sendWechatTyping({
+      baseUrl: 'https://api.example.com',
+      token: 'token',
+      ilinkUserId: 'user',
+      typingTicket: 'ticket',
+      status: 'typing',
+    })).rejects.toThrow('wechatSendTyping returned 42001: typing ticket expired')
   })
 })
