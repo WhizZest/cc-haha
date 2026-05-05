@@ -456,7 +456,7 @@ async function sendPermissionRequest(chatId: string, msg: ServerMessage): Promis
 }
 
 function handlePermissionCommand(chatId: string, text: string): boolean {
-  const decision = parsePermissionCommand(text)
+  const decision = parsePermissionCommand(text, pendingPermissions.get(chatId))
   if (!decision) return false
 
   const sent = applyPermissionDecision(chatId, decision)

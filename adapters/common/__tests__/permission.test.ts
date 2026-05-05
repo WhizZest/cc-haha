@@ -14,6 +14,19 @@ describe('permission helpers', () => {
     expect(parsePermissionCommand('/deny req-4')).toEqual({ requestId: 'req-4', allowed: false })
   })
 
+  it('parses short replies when one permission is pending', () => {
+    const pending = new Set(['req-1'])
+    expect(parsePermissionCommand('1', pending)).toEqual({ requestId: 'req-1', allowed: true })
+    expect(parsePermissionCommand('2', pending)).toEqual({ requestId: 'req-1', allowed: true, rule: 'always' })
+    expect(parsePermissionCommand('3', pending)).toEqual({ requestId: 'req-1', allowed: false })
+    expect(parsePermissionCommand('/always', pending)).toEqual({ requestId: 'req-1', allowed: true, rule: 'always' })
+    expect(parsePermissionCommand('永久允许', pending)).toEqual({ requestId: 'req-1', allowed: true, rule: 'always' })
+  })
+
+  it('does not parse short replies when multiple permissions are pending', () => {
+    expect(parsePermissionCommand('1', new Set(['req-1', 'req-2']))).toBeNull()
+  })
+
   it('parses callback permission actions', () => {
     expect(parsePermitCallbackData('permit:req-1:yes')).toEqual({ requestId: 'req-1', allowed: true })
     expect(parsePermitCallbackData('permit:req-2:always')).toEqual({ requestId: 'req-2', allowed: true, rule: 'always' })
@@ -22,6 +35,7 @@ describe('permission helpers', () => {
   })
 
   it('formats text fallback and status labels', () => {
+    expect(formatPermissionInstructions('req-1')).toContain('回复 1')
     expect(formatPermissionInstructions('req-1')).toContain('/always req-1')
     expect(formatPermissionDecisionStatus({ allowed: true, rule: 'always' })).toContain('永久允许')
     expect(formatPermissionDecisionStatus({ allowed: false })).toContain('拒绝')

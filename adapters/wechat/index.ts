@@ -502,7 +502,7 @@ async function routeUserMessage(message: WechatMessage): Promise<void> {
       await sendText(chatId, sent ? '已清空当前会话上下文。' : '无法发送 /clear，请先发送 /new 重新连接会话。')
       return
     }
-    const permissionDecision = !hasAttachments ? parsePermissionCommand(text) : null
+    const permissionDecision = !hasAttachments ? parsePermissionCommand(text, pendingPermissions.get(chatId)) : null
     if (permissionDecision) {
       const { requestId, allowed, rule } = permissionDecision
       const pending = pendingPermissions.get(chatId)

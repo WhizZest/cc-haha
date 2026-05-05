@@ -4,15 +4,41 @@ export type PermissionDecision = {
   rule?: 'always'
 }
 
-export function parsePermissionCommand(text: string): PermissionDecision | null {
-  const match = text.trim().match(/^\/(allow|always|allow-always|deny)\s+(\S+)/i)
-  if (!match) return null
+function getSinglePendingRequestId(requestIds?: Iterable<string> | null): string | null {
+  if (!requestIds) return null
+  const ids = Array.from(requestIds)
+  return ids.length === 1 ? ids[0]! : null
+}
 
-  const action = match[1]!.toLowerCase()
-  const requestId = match[2]!
-  if (action === 'deny') return { requestId, allowed: false }
-  if (action === 'always' || action === 'allow-always') return { requestId, allowed: true, rule: 'always' }
-  return { requestId, allowed: true }
+export function parsePermissionCommand(
+  text: string,
+  pendingRequestIds?: Iterable<string> | null,
+): PermissionDecision | null {
+  const trimmed = text.trim()
+  const match = text.trim().match(/^\/(allow|always|allow-always|deny)\s+(\S+)/i)
+  if (match) {
+    const action = match[1]!.toLowerCase()
+    const requestId = match[2]!
+    if (action === 'deny') return { requestId, allowed: false }
+    if (action === 'always' || action === 'allow-always') return { requestId, allowed: true, rule: 'always' }
+    return { requestId, allowed: true }
+  }
+
+  const requestId = getSinglePendingRequestId(pendingRequestIds)
+  if (!requestId) return null
+
+  const shortcut = trimmed.toLowerCase()
+  if (['1', '/1', 'allow', '/allow', 'y', 'yes', '允许', '允许一次', '同意', '批准'].includes(shortcut)) {
+    return { requestId, allowed: true }
+  }
+  if (['2', '/2', 'always', '/always', 'allow-always', '/allow-always', '永久允许', '一直允许'].includes(shortcut)) {
+    return { requestId, allowed: true, rule: 'always' }
+  }
+  if (['3', '/3', 'deny', '/deny', 'n', 'no', '拒绝', '不允许', '否'].includes(shortcut)) {
+    return { requestId, allowed: false }
+  }
+
+  return null
 }
 
 export function parsePermitCallbackData(data: string): PermissionDecision | null {
@@ -33,10 +59,9 @@ export function parsePermitCallbackData(data: string): PermissionDecision | null
 
 export function formatPermissionInstructions(requestId: string): string {
   return [
-    `回复 /allow ${requestId} 允许一次`,
-    `/always ${requestId} 永久允许`,
-    `/deny ${requestId} 拒绝。`,
-  ].join('，')
+    '回复 1 允许一次，2 永久允许，3 拒绝。',
+    `也可回复 /allow ${requestId}、/always ${requestId}、/deny ${requestId}。`,
+  ].join('\n')
 }
 
 export function formatPermissionDecisionStatus(decision: Pick<PermissionDecision, 'allowed' | 'rule'>): string {

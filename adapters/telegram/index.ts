@@ -20,7 +20,10 @@ import {
 } from '../common/format.js'
 import {
   formatPermissionDecisionStatus,
+  formatPermissionInstructions,
+  parsePermissionCommand,
   parsePermitCallbackData,
+  type PermissionDecision,
 } from '../common/permission.js'
 import { SessionStore } from '../common/session-store.js'
 import { AdapterHttpClient } from '../common/http-client.js'
@@ -64,6 +67,7 @@ const buffers = new Map<string, MessageBuffer>()
 // Track chats waiting for project selection
 const pendingProjectSelection = new Map<string, boolean>()
 const runtimeStates = new Map<string, ChatRuntimeState>()
+const pendingPermissions = new Map<string, Set<string>>()
 /** Per-chat outbound image watcher for Agent-produced markdown images. */
 const tgImageWatchers = new Map<string, ImageBlockWatcher>()
 
@@ -113,7 +117,27 @@ function clearTransientChatState(chatId: string): void {
   runtime.state = 'idle'
   runtime.verb = undefined
   runtime.pendingPermissionCount = 0
+  pendingPermissions.delete(chatId)
   tgImageWatchers.delete(chatId)
+}
+
+async function handlePermissionDecision(chatId: string, decision: PermissionDecision): Promise<void> {
+  const pending = pendingPermissions.get(chatId)
+  if (!pending?.has(decision.requestId)) {
+    await bot.api.sendMessage(Number(chatId), `未找到待确认的权限请求：${decision.requestId}`)
+    return
+  }
+
+  const sent = bridge.sendPermissionResponse(chatId, decision.requestId, decision.allowed, decision.rule)
+  if (sent) {
+    pending.delete(decision.requestId)
+    const runtime = getRuntimeState(chatId)
+    runtime.pendingPermissionCount = Math.max(0, runtime.pendingPermissionCount - 1)
+  }
+  await bot.api.sendMessage(
+    Number(chatId),
+    sent ? `${formatPermissionDecisionStatus(decision)}。` : '权限响应发送失败，请检查会话状态。',
+  )
 }
 
 async function ensureExistingSession(chatId: string): Promise<{ sessionId: string; workDir: string } | null> {
@@ -412,7 +436,10 @@ async function handleServerMessage(chatId: string, msg: ServerMessage): Promise<
     case 'permission_request': {
       runtime.pendingPermissionCount += 1
       runtime.state = 'permission_pending'
-      const text = formatPermissionRequest(msg.toolName, msg.input, msg.requestId)
+      const pending = pendingPermissions.get(chatId) ?? new Set<string>()
+      pending.add(msg.requestId)
+      pendingPermissions.set(chatId, pending)
+      const text = `${formatPermissionRequest(msg.toolName, msg.input, msg.requestId)}\n\n${formatPermissionInstructions(msg.requestId)}`
       const keyboard = new InlineKeyboard()
         .text('✅ 允许', `permit:${msg.requestId}:yes`)
         .text('♾️ 永久允许', `permit:${msg.requestId}:always`)
@@ -504,6 +531,7 @@ async function startNewSession(chatId: string, query?: string): Promise<void> {
   buffers.get(chatId)?.reset()
   buffers.delete(chatId)
   pendingProjectSelection.delete(chatId)
+  pendingPermissions.delete(chatId)
   runtimeStates.delete(chatId)
   tgImageWatchers.delete(chatId)
 
@@ -587,6 +615,12 @@ bot.command('clear', (ctx) => {
   })()
 })
 
+for (const command of ['allow', 'always', 'allow-always', 'deny'] as const) {
+  bot.command(command, async (ctx) => {
+    await routeUserMessage(ctx, `/${command}${ctx.match ? ` ${ctx.match}` : ''}`, [])
+  })
+}
+
 /** Shared per-user-message pipeline: dedup, pairing check, project-pick
  *  routing, enqueue, ensureSession, sendUserMessage with attachments.
  *  Caller has already extracted text and attachments from the context. */
@@ -613,6 +647,14 @@ async function routeUserMessage(
   }
 
   enqueue(chatId, async () => {
+    const permissionDecision = attachments.length === 0
+      ? parsePermissionCommand(text, pendingPermissions.get(chatId))
+      : null
+    if (permissionDecision) {
+      await handlePermissionDecision(chatId, permissionDecision)
+      return
+    }
+
     if (pendingProjectSelection.has(chatId)) {
       if (text.trim()) await startNewSession(chatId, text.trim())
       return
@@ -727,6 +769,7 @@ bot.on('callback_query:data', async (ctx) => {
   bridge.sendPermissionResponse(chatId, decision.requestId, decision.allowed, decision.rule)
   const runtime = getRuntimeState(chatId)
   runtime.pendingPermissionCount = Math.max(0, runtime.pendingPermissionCount - 1)
+  pendingPermissions.get(chatId)?.delete(decision.requestId)
 
   const statusText = formatPermissionDecisionStatus(decision)
   try {
