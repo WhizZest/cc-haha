@@ -53,11 +53,6 @@ function shouldFetchContext(sessionId: string | undefined, draft: boolean) {
   return Boolean(sessionId) && !draft
 }
 
-function isEmptyContextSnapshot(context: SessionContextSnapshot | null, messageCount: number) {
-  if (!context || messageCount > 0) return false
-  return context.totalTokens === 0 && context.percentage === 0
-}
-
 export function ContextUsageIndicator({
   sessionId,
   chatState,
@@ -139,11 +134,11 @@ export function ContextUsageIndicator({
   }, [chatState, messageCount, refresh])
 
   const details = useMemo(() => {
-    if (!context || isEmptyContextSnapshot(context, messageCount)) return []
+    if (!context) return []
     return pickUsedContextCategory(context)
-  }, [context, messageCount])
+  }, [context])
 
-  const displayContext = isEmptyContextSnapshot(context, messageCount) ? null : context
+  const displayContext = context
   const hasPlaceholderContext = !displayContext && (
     draft || (!loading && messageCount === 0 && (!error || isCliNotRunningError(error)))
   )

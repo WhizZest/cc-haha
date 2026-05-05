@@ -20,6 +20,7 @@ import {
 const MAX_CAPTURED_PROCESS_LINES = 80
 const MAX_CAPTURED_SDK_MESSAGES = 40
 const MAX_CAPTURED_SDK_SUMMARY = 20
+const CONTROL_READY_POLL_MS = 50
 
 type AttachmentRef = {
   type: 'file' | 'image'
@@ -387,7 +388,31 @@ export class ConversationService {
     })
   }
 
-  requestControl(
+  private isControlChannelReady(session: SessionProcess): boolean {
+    return Boolean(session.sdkSocket)
+  }
+
+  private async waitForControlChannelReady(
+    sessionId: string,
+    timeoutMs: number,
+  ): Promise<void> {
+    const startedAt = Date.now()
+
+    while (Date.now() - startedAt < timeoutMs) {
+      const session = this.sessions.get(sessionId)
+      if (!session) {
+        throw new Error('CLI session is not running')
+      }
+      if (this.isControlChannelReady(session)) {
+        return
+      }
+      await new Promise((resolve) => setTimeout(resolve, CONTROL_READY_POLL_MS))
+    }
+
+    throw new Error('Timed out waiting for CLI control channel to become ready')
+  }
+
+  async requestControl(
     sessionId: string,
     request: Record<string, unknown>,
     timeoutMs = 10_000,
@@ -396,12 +421,15 @@ export class ConversationService {
       return Promise.reject(new Error('CLI session is not running'))
     }
 
+    const startedAt = Date.now()
+    await this.waitForControlChannelReady(sessionId, timeoutMs)
+    const responseTimeoutMs = Math.max(1, timeoutMs - (Date.now() - startedAt))
     const requestId = crypto.randomUUID()
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.removeOutputCallback(sessionId, handleOutput)
         reject(new Error(`Timed out waiting for ${String(request.subtype ?? 'control')} response`))
-      }, timeoutMs)
+      }, responseTimeoutMs)
 
       const finish = (fn: () => void) => {
         clearTimeout(timeout)

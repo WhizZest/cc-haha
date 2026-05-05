@@ -833,7 +833,7 @@ describe('Content-only pages render without errors', () => {
     useChatStore.setState({ sessions: {} })
   })
 
-  it('ActiveSession treats an empty live zero-token context as pending instead of 0%', async () => {
+  it('ActiveSession shows initial context usage for an empty live session', async () => {
     const SESSION_ID = 'context-empty-live-session'
     vi.mocked(sessionsApi.getInspection).mockResolvedValueOnce({
       active: true,
@@ -846,12 +846,15 @@ describe('Content-only pages render without errors', () => {
       },
       context: {
         categories: [
-          { name: 'Free space', tokens: 128_000, color: '#9B928C', isDeferred: true },
+          { name: 'System prompt', tokens: 6_800, color: '#8a8a8a' },
+          { name: 'System tools', tokens: 13_200, color: '#9B928C' },
+          { name: 'MCP tools', tokens: 8_000, color: '#06b6d4' },
+          { name: 'Free space', tokens: 100_000, color: '#9B928C', isDeferred: true },
         ],
-        totalTokens: 0,
+        totalTokens: 28_000,
         maxTokens: 128_000,
         rawMaxTokens: 128_000,
-        percentage: 0,
+        percentage: 22,
         gridRows: [],
         model: 'kimi-k2.6',
         memoryFiles: [],
@@ -901,11 +904,10 @@ describe('Content-only pages render without errors', () => {
 
     render(<ActiveSession />)
 
-    const indicator = await screen.findByLabelText('Context usage not calculated')
-    expect(indicator).toHaveTextContent('--')
-    expect(screen.queryByLabelText('Context usage 0%')).not.toBeInTheDocument()
+    const indicator = await screen.findByLabelText('Context usage 22%')
+    expect(indicator).toHaveTextContent('22%')
     expect(screen.getAllByText('kimi-k2.6').length).toBeGreaterThan(0)
-    expect(screen.getByText('Context usage will be calculated after the session starts.')).toBeInTheDocument()
+    expect(screen.queryByText('Context usage will be calculated after the session starts.')).not.toBeInTheDocument()
 
     useTabStore.setState({ tabs: [], activeTabId: null })
     useSessionStore.setState({ sessions: [], activeSessionId: null, isLoading: false, error: null })

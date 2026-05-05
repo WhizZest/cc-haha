@@ -75,6 +75,60 @@ describe('ConversationService', () => {
     expect(result).toBe(false)
   })
 
+  it('should not queue control requests before the SDK socket connects', async () => {
+    const svc = new ConversationService()
+    const sid = crypto.randomUUID()
+    const sent: unknown[] = []
+    const session: any = {
+      proc: { kill() {}, exited: Promise.resolve(0) },
+      outputCallbacks: [],
+      workDir: process.cwd(),
+      permissionMode: 'default',
+      sdkToken: 'token',
+      sdkSocket: null,
+      pendingOutbound: [],
+      startupPending: false,
+      startupExitCode: null,
+      stdoutLines: [],
+      stderrLines: [],
+      outputDrain: Promise.resolve(),
+      sdkMessages: [],
+      initMessage: null,
+      pendingPermissionRequests: new Map(),
+    }
+    ;(svc as any).sessions.set(sid, session)
+
+    const request = svc.requestControl(sid, { subtype: 'get_context_usage' }, 1_000)
+    await new Promise((resolve) => setTimeout(resolve, 75))
+
+    expect(session.pendingOutbound).toHaveLength(0)
+    expect(sent).toHaveLength(0)
+
+    session.sdkSocket = {
+      send(data: string) {
+        sent.push(JSON.parse(data))
+      },
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 75))
+    expect(session.pendingOutbound).toHaveLength(0)
+    expect(sent).toHaveLength(1)
+
+    const requestId = (sent[0] as any).request_id
+    for (const callback of [...session.outputCallbacks]) {
+      callback({
+        type: 'control_response',
+        response: {
+          subtype: 'success',
+          request_id: requestId,
+          response: { ok: true },
+        },
+      })
+    }
+
+    await expect(request).resolves.toEqual({ ok: true })
+  })
+
   it('should forward suggested permission updates for allow-for-session decisions', () => {
     const svc = new ConversationService()
     const sent: unknown[] = []
@@ -421,6 +475,29 @@ describe('WebSocket Chat Integration', () => {
         delete process.env.MOCK_SDK_INIT_MODE
       } else {
         process.env.MOCK_SDK_INIT_MODE = previousMode
+      }
+    }
+  }
+
+  async function withMockInitDelay<T>(
+    delayMs: number | undefined,
+    callback: () => Promise<T>,
+  ): Promise<T> {
+    const previousDelay = process.env.MOCK_SDK_INIT_DELAY_MS
+
+    if (delayMs && delayMs > 0) {
+      process.env.MOCK_SDK_INIT_DELAY_MS = String(delayMs)
+    } else {
+      delete process.env.MOCK_SDK_INIT_DELAY_MS
+    }
+
+    try {
+      return await callback()
+    } finally {
+      if (previousDelay === undefined) {
+        delete process.env.MOCK_SDK_INIT_DELAY_MS
+      } else {
+        process.env.MOCK_SDK_INIT_DELAY_MS = previousDelay
       }
     }
   }
@@ -860,6 +937,64 @@ describe('WebSocket Chat Integration', () => {
       expect(elapsedMs).toBeLessThan(1_500)
     })
   })
+
+  it('should return initial context for a prewarmed empty session on the first inspection request', async () => {
+    await withMockInitDelay(500, async () => {
+      const createRes = await fetch(`${baseUrl}/api/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workDir: process.cwd() }),
+      })
+      expect(createRes.status).toBe(201)
+      const { sessionId } = await createRes.json() as { sessionId: string }
+      const ws = new WebSocket(`${wsUrl}/ws/${sessionId}`)
+
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            ws.close()
+            reject(new Error(`Timed out waiting for prewarm connection for ${sessionId}`))
+          }, 5_000)
+
+          ws.onmessage = (event) => {
+            const msg = JSON.parse(event.data as string)
+            if (msg.type === 'connected') {
+              clearTimeout(timeout)
+              ws.send(JSON.stringify({ type: 'prewarm_session' }))
+              resolve()
+            }
+          }
+
+          ws.onerror = () => {
+            clearTimeout(timeout)
+            ws.close()
+            reject(new Error(`WebSocket error for prewarm context session ${sessionId}`))
+          }
+        })
+
+        await waitUntil(
+          () => conversationService.hasSession(sessionId),
+          `prewarmed CLI process for ${sessionId}`,
+        )
+
+        const startedAt = performance.now()
+        const res = await fetch(`${baseUrl}/api/sessions/${sessionId}/inspection?includeContext=1&contextOnly=1`)
+        const elapsedMs = performance.now() - startedAt
+        expect(res.status).toBe(200)
+        const body = await res.json() as any
+
+        expect(body.context.model).toBe('mock-opus')
+        expect(body.context.totalTokens).toBeGreaterThan(0)
+        expect(body.context.percentage).toBe(13)
+        expect(body.context.categories.some((category: any) => category.name === 'System prompt')).toBe(true)
+        expect(body.errors).toEqual({})
+        expect(elapsedMs).toBeLessThan(2_000)
+      } finally {
+        ws.close()
+        conversationService.stopSession(sessionId)
+      }
+    })
+  }, 10_000)
 
   it('should complete the client turn when the CLI exits after startup', async () => {
     const messages = await withMockExitAfterFirstUser(50, () =>

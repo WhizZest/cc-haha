@@ -25,6 +25,7 @@ function extractUserText(message: any): string {
 const sdkUrl = getArg('--sdk-url')
 const sessionId = getArg('--session-id') || crypto.randomUUID()
 const initMode = process.env.MOCK_SDK_INIT_MODE || 'on_open'
+const initDelayMs = Number(process.env.MOCK_SDK_INIT_DELAY_MS || '0')
 const streamDelayMs = Number(process.env.MOCK_SDK_STREAM_DELAY_MS || '0')
 const exitAfterOpenMs = Number(process.env.MOCK_SDK_EXIT_AFTER_OPEN_MS || '0')
 const exitAfterFirstUserMs = Number(process.env.MOCK_SDK_EXIT_AFTER_FIRST_USER_MS || '0')
@@ -63,7 +64,11 @@ function sendInit() {
 
 ws.addEventListener('open', () => {
   if (initMode !== 'on_first_user') {
-    sendInit()
+    if (initDelayMs > 0) {
+      setTimeout(sendInit, initDelayMs)
+    } else {
+      sendInit()
+    }
   }
   if (exitAfterOpenMs > 0) {
     setTimeout(() => process.exit(1), exitAfterOpenMs)
