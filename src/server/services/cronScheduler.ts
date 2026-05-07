@@ -15,6 +15,10 @@ import * as crypto from 'crypto'
 import { CronService, type CronTask } from './cronService.js'
 import { SessionService } from './sessionService.js'
 import { sendTaskNotification } from './notificationService.js'
+import {
+  buildClaudeCliArgs,
+  resolveClaudeCliLauncher,
+} from '../../utils/desktopBundledCli.js'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -242,6 +246,87 @@ function trimRuns(data: RunsFile): void {
 
 const TASK_TIMEOUT_MS = 10 * 60 * 1000 // 10 minutes
 
+type CronCliResolutionOptions = {
+  cliPath?: string | null
+  execPath?: string
+  appRoot?: string
+  cwd?: string
+  moduleDir?: string
+  env?: NodeJS.ProcessEnv
+}
+
+function isSourceProjectRoot(root: string): boolean {
+  return (
+    existsSync(path.join(root, 'preload.ts')) &&
+    existsSync(path.join(root, 'src', 'entrypoints', 'cli.tsx'))
+  )
+}
+
+function findSourceProjectRoot(startDir: string): string | null {
+  let current = path.resolve(startDir)
+
+  while (true) {
+    if (isSourceProjectRoot(current)) {
+      return current
+    }
+
+    const parent = path.dirname(current)
+    if (parent === current) {
+      return null
+    }
+    current = parent
+  }
+}
+
+export function resolveCronProjectRoot(
+  options: CronCliResolutionOptions = {},
+): string {
+  const env = options.env ?? process.env
+  const explicitRoot = env.CC_HAHA_ROOT?.trim()
+  if (explicitRoot && isSourceProjectRoot(path.resolve(explicitRoot))) {
+    return path.resolve(explicitRoot)
+  }
+
+  const cwdRoot = findSourceProjectRoot(options.cwd ?? process.cwd())
+  if (cwdRoot) {
+    return cwdRoot
+  }
+
+  const moduleRoot = findSourceProjectRoot(options.moduleDir ?? import.meta.dir)
+  if (moduleRoot) {
+    return moduleRoot
+  }
+
+  return path.resolve(options.moduleDir ?? import.meta.dir, '../../..')
+}
+
+export function buildCronCliArgs(
+  baseArgs: string[],
+  options: CronCliResolutionOptions = {},
+): string[] {
+  const launcher = resolveClaudeCliLauncher({
+    cliPath: options.cliPath ?? process.env.CLAUDE_CLI_PATH,
+    execPath: options.execPath ?? process.execPath,
+  })
+
+  if (launcher) {
+    return buildClaudeCliArgs(
+      launcher,
+      baseArgs,
+      options.appRoot ?? process.env.CLAUDE_APP_ROOT,
+    )
+  }
+
+  const projectRoot = resolveCronProjectRoot(options)
+  return [
+    'bun',
+    '--preload',
+    path.join(projectRoot, 'preload.ts'),
+    path.join(projectRoot, 'src', 'entrypoints', 'cli.tsx'),
+    ...baseArgs,
+  ]
+}
+
 export class CronScheduler {
   private intervalId: Timer | null = null
   private runningTasks = new Map<
@@ -396,11 +481,6 @@ export class CronScheduler {
     // Persist the "running" state
     await appendRun(run)
 
-    // Resolve paths relative to project root
-    const projectRoot = path.resolve(import.meta.dir, '../../..')
-    const cliPath = path.join(projectRoot, 'src/entrypoints/cli.tsx')
-    const preloadPath = path.join(projectRoot, 'preload.ts')
-
     const inputPayload = JSON.stringify({
       type: 'user',
       message: {
@@ -411,25 +491,28 @@ export class CronScheduler {
       session_id: sessionId || '',
     }) + '\n'
 
+    const cliArgs = buildCronCliArgs([
+      '--print',
+      '--verbose',
+      '--input-format',
+      'stream-json',
+      '--output-format',
+      'stream-json',
+      ...(sessionId ? ['--session-id', sessionId] : []),
+    ])
+
     const proc = Bun.spawn(
-      [
-        'bun',
-        '--preload',
-        preloadPath,
-        cliPath,
-        '--print',
-        '--verbose',
-        '--input-format',
-        'stream-json',
-        '--output-format',
-        'stream-json',
-        ...(sessionId ? ['--session-id', sessionId] : []),
-      ],
+      cliArgs,
       {
         stdin: 'pipe',
         stdout: 'pipe',
         stderr: 'pipe',
         cwd: workDir,
+        env: {
+          ...process.env,
+          CALLER_DIR: workDir,
+          PWD: workDir,
+        },
       },
     )
 
