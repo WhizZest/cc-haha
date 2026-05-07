@@ -70,8 +70,40 @@ describe('DirectoryPicker', () => {
 
     const trigger = screen.getByRole('button')
     expect(trigger).toHaveTextContent('project')
-    expect(trigger.className).toContain('rounded-lg')
+    expect(trigger.className).toContain('rounded-[7px]')
     expect(trigger.className).not.toContain('rounded-full')
+  })
+
+  it('constrains long workbar project names without hiding the full path from hover users', () => {
+    const longProjectName = 'project-with-a-very-long-directory-name-that-should-not-stretch-the-launch-bar'
+    const longPath = `/workspace/${longProjectName}`
+
+    render(
+      <DirectoryPicker
+        value={longPath}
+        onChange={vi.fn()}
+        variant="workbar"
+      />,
+    )
+
+    const trigger = screen.getByRole('button')
+    const label = screen.getByText(longProjectName)
+    expect(trigger).toHaveAttribute('title', longPath)
+    expect(trigger.className).toContain('w-full')
+    expect(label.className).toContain('truncate')
+  })
+
+  it('can show a Git icon for workbar projects before the recent-project cache is loaded', () => {
+    render(
+      <DirectoryPicker
+        value="/workspace/project"
+        onChange={vi.fn()}
+        variant="workbar"
+        isGitProject
+      />,
+    )
+
+    expect(screen.getByRole('button').querySelector('svg')).toBeInTheDocument()
   })
 
   it('renders browse entries without nesting interactive buttons', async () => {

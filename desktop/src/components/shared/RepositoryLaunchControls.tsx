@@ -256,15 +256,16 @@ export function RepositoryLaunchControls({
     onLaunchReadyChange?.(isLaunchReady)
   }, [isLaunchReady, onLaunchReadyChange])
 
-  const workbarButtonClassName = 'inline-flex min-w-0 items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)]/35 disabled:cursor-not-allowed disabled:opacity-50'
+  const worktreeLabel = useWorktree ? t('repoLaunch.worktreeIsolated') : t('repoLaunch.worktreeCurrent')
+  const workbarButtonClassName = 'group inline-flex h-9 min-w-0 items-center gap-1.5 rounded-[7px] border border-transparent px-2.5 text-[13px] font-medium leading-none text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-border)] hover:bg-[var(--color-surface-container-lowest)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)]/35 disabled:cursor-not-allowed disabled:opacity-50'
 
   return (
     <div ref={rootRef} className="flex min-w-0 flex-col gap-2">
-      <div className="flex min-h-[58px] min-w-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-b-xl bg-[var(--color-surface-container)] px-5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)]">
-        <DirectoryPicker value={workDir} onChange={onWorkDirChange} variant="workbar" />
+      <div className="flex min-h-[48px] min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-b-xl border-t border-[var(--color-border-separator)] bg-[var(--color-surface-container-low)] px-4 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]">
+        <DirectoryPicker value={workDir} onChange={onWorkDirChange} variant="workbar" isGitProject={isGitReady} />
 
         {loading && workDir && (
-          <div className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm text-[var(--color-text-secondary)]">
+          <div className="inline-flex h-9 items-center gap-1.5 rounded-[7px] px-2.5 text-[13px] text-[var(--color-text-secondary)]">
             <Loader2 size={14} className="shrink-0 animate-spin" />
             <span>{t('common.loading')}</span>
           </div>
@@ -272,7 +273,7 @@ export function RepositoryLaunchControls({
 
         {isGitReady && (
           <>
-            <span className="h-5 w-px bg-[var(--color-border-separator)]" aria-hidden="true" />
+            <span className="hidden h-5 w-px shrink-0 bg-[var(--color-border-separator)] sm:block" aria-hidden="true" />
             <button
               ref={branchButtonRef}
               type="button"
@@ -280,14 +281,15 @@ export function RepositoryLaunchControls({
               aria-haspopup="listbox"
               aria-expanded={branchMenuOpen}
               aria-label={`${t('repoLaunch.selectBranch')}: ${selectedBranch?.name || t('repoLaunch.noBranch')}`}
+              title={selectedBranch?.name || t('repoLaunch.noBranch')}
               onClick={() => {
                 setBranchMenuOpen((prev) => !prev)
                 setBranchFilter('')
               }}
-              className={workbarButtonClassName}
+              className={`${workbarButtonClassName} flex-[0_1_260px]`}
             >
-              <GitBranch size={18} className="shrink-0" />
-              <span className="min-w-0 max-w-[220px] truncate text-[var(--color-text-primary)]">
+              <GitBranch size={17} className="shrink-0 text-[var(--color-text-tertiary)] group-hover:text-[var(--color-text-secondary)]" />
+              <span className="min-w-0 flex-1 truncate text-[var(--color-text-primary)]">
                 {selectedBranch?.name || t('repoLaunch.noBranch')}
               </span>
               <ChevronDown size={16} className="shrink-0 text-[var(--color-text-tertiary)]" />
@@ -298,16 +300,17 @@ export function RepositoryLaunchControls({
               disabled={disabled || requiresIsolation}
               aria-pressed={useWorktree}
               aria-label={t('repoLaunch.toggleWorktree')}
+              title={worktreeLabel}
               onClick={() => onUseWorktreeChange(!useWorktree)}
               className={`${workbarButtonClassName} ${
                 useWorktree
-                  ? 'bg-[var(--color-primary-fixed)] text-[var(--color-text-primary)]'
+                  ? 'border-[var(--color-border-focus)] bg-[var(--color-surface-container-lowest)] text-[var(--color-text-primary)] shadow-[inset_0_0_0_1px_var(--color-border-focus)]'
                   : ''
               }`}
             >
-              <GitFork size={18} className="shrink-0" />
+              <GitFork size={17} className="shrink-0 text-[var(--color-text-tertiary)]" />
               <span className="min-w-0 truncate">
-                {useWorktree ? t('repoLaunch.worktreeIsolated') : t('repoLaunch.worktreeCurrent')}
+                {worktreeLabel}
               </span>
             </button>
           </>
