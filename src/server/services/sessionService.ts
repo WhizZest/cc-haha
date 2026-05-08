@@ -49,6 +49,7 @@ export type SessionLaunchInfo = {
   projectDir: string
   workDir: string
   repository?: PreparedSessionWorkspace['repository']
+  worktreeSession?: PersistedWorktreeSession | null
   transcriptMessageCount: number
   customTitle: string | null
 }
@@ -178,8 +179,21 @@ type RawEntry = {
     timestamp?: string
   }
   customTitle?: string
+  worktreeSession?: PersistedWorktreeSession | null
   title?: string
   [key: string]: unknown
+}
+
+type PersistedWorktreeSession = {
+  originalCwd: string
+  worktreePath: string
+  worktreeName: string
+  worktreeBranch?: string
+  originalBranch?: string
+  originalHeadCommit?: string
+  sessionId: string
+  tmuxSessionName?: string
+  hookBased?: boolean
 }
 
 type ContentBlock = Record<string, unknown>
@@ -277,6 +291,25 @@ export class SessionService {
       const repository = (entries[i] as Record<string, unknown>)?.repository
       if (repository && typeof repository === 'object') {
         return repository as PreparedSessionWorkspace['repository']
+      }
+    }
+    return undefined
+  }
+
+  private resolveWorktreeSessionFromEntries(entries: RawEntry[]): PersistedWorktreeSession | null | undefined {
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const entry = entries[i]
+      if (entry?.type !== 'worktree-state') continue
+
+      const worktreeSession = entry.worktreeSession
+      if (worktreeSession === null) return null
+      if (
+        worktreeSession &&
+        typeof worktreeSession === 'object' &&
+        typeof worktreeSession.worktreePath === 'string' &&
+        typeof worktreeSession.worktreeName === 'string'
+      ) {
+        return worktreeSession
       }
     }
     return undefined
@@ -1386,6 +1419,7 @@ export class SessionService {
     const entries = await this.readJsonlFile(found.filePath)
     const workDir = this.resolveWorkDirFromEntries(entries, found.projectDir) || process.cwd()
     const repository = this.resolveRepositoryFromEntries(entries)
+    const worktreeSession = this.resolveWorktreeSessionFromEntries(entries)
     let customTitle: string | null = null
 
     for (const entry of entries) {
@@ -1400,6 +1434,7 @@ export class SessionService {
       projectDir: found.projectDir,
       workDir,
       repository,
+      worktreeSession,
       transcriptMessageCount,
       customTitle,
     }

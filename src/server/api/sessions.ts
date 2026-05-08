@@ -540,15 +540,16 @@ async function getGitInfo(sessionId: string): Promise<Response> {
   }
   const launchInfo = await sessionService.getSessionLaunchInfo(sessionId).catch(() => null)
   const repository = launchInfo?.repository
-  const sessionBranch = repository?.branch || null
-  const worktree = repository?.worktree
+  const worktreeSession = launchInfo?.worktreeSession
+  const sessionBranch = repository?.branch || worktreeSession?.originalBranch || null
+  const worktree = repository?.worktree || worktreeSession
     ? {
         enabled: true,
-        path: workDir,
-        plannedPath: repository.worktreePath || null,
-        sourceWorkDir: repository.requestedWorkDir || repository.repoRoot || null,
-        slug: repository.worktreeSlug || null,
-        branch: repository.worktreeBranch || null,
+        path: worktreeSession?.worktreePath || workDir,
+        plannedPath: repository?.worktreePath || worktreeSession?.worktreePath || null,
+        sourceWorkDir: repository?.requestedWorkDir || repository?.repoRoot || worktreeSession?.originalCwd || null,
+        slug: repository?.worktreeSlug || worktreeSession?.worktreeName || null,
+        branch: repository?.worktreeBranch || worktreeSession?.worktreeBranch || null,
       }
     : null
 

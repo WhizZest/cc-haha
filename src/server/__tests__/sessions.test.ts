@@ -269,6 +269,26 @@ function makeSessionMetaEntry(workDir: string): Record<string, unknown> {
   }
 }
 
+function makeWorktreeStateEntry(
+  sessionId: string,
+  worktreePath: string,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    type: 'worktree-state',
+    sessionId,
+    worktreeSession: {
+      originalCwd: '/tmp/source',
+      worktreePath,
+      worktreeName: 'desktop-main-12345678',
+      worktreeBranch: 'worktree-desktop-main-12345678',
+      originalBranch: 'main',
+      sessionId,
+      ...overrides,
+    },
+  }
+}
+
 async function writeFileHistoryBackup(
   sessionId: string,
   backupFileName: string,
@@ -889,6 +909,27 @@ describe('SessionService', () => {
 
     const workDir = await service.getSessionWorkDir(sessionId)
     expect(workDir).toBe('/tmp/latest-worktree')
+  })
+
+  it('should recover CLI worktree state from transcript metadata', async () => {
+    const sessionId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+    await writeSessionFile('-tmp-project--claude-worktrees-desktop-main-12345678', sessionId, [
+      makeSnapshotEntry(),
+      makeSessionMetaEntry('/tmp/project/.claude/worktrees/desktop-main-12345678'),
+      makeWorktreeStateEntry(sessionId, '/tmp/project/.claude/worktrees/desktop-main-12345678', {
+        originalCwd: '/tmp/project',
+      }),
+      makeUserEntry('Hello from CLI worktree'),
+    ])
+
+    const launchInfo = await service.getSessionLaunchInfo(sessionId)
+    expect(launchInfo?.worktreeSession).toMatchObject({
+      originalCwd: '/tmp/project',
+      worktreePath: '/tmp/project/.claude/worktrees/desktop-main-12345678',
+      worktreeName: 'desktop-main-12345678',
+      worktreeBranch: 'worktree-desktop-main-12345678',
+      originalBranch: 'main',
+    })
   })
 
   it('should preserve repository metadata when replacing placeholder transcripts', async () => {
@@ -1592,6 +1633,48 @@ describe('Sessions API', () => {
     } finally {
       sessionsMap.delete(sessionId)
     }
+  })
+
+  it('GET /api/sessions/:id/git-info should use CLI worktree-state after reload', async () => {
+    const workDir = await createCleanGitRepo(tmpDir)
+    const sessionId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+    const activeWorktree = path.join(workDir, '.claude', 'worktrees', 'desktop-main-12345678')
+    git(workDir, 'worktree', 'add', '-b', 'worktree-desktop-main-12345678', activeWorktree, 'main')
+    await writeSessionFile(sanitizePath(activeWorktree), sessionId, [
+      makeSnapshotEntry(),
+      makeSessionMetaEntry(activeWorktree),
+      makeWorktreeStateEntry(sessionId, activeWorktree, {
+        originalCwd: await fs.realpath(workDir),
+      }),
+      makeUserEntry('Hello from persisted worktree state'),
+    ])
+
+    const res = await fetch(`${baseUrl}/api/sessions/${sessionId}/git-info`)
+    expect(res.status).toBe(200)
+
+    const body = (await res.json()) as {
+      branch: string | null
+      repoName: string | null
+      workDir: string
+      worktree: {
+        enabled: boolean
+        path: string | null
+        plannedPath: string | null
+        sourceWorkDir: string | null
+        slug: string | null
+        branch: string | null
+      } | null
+    }
+    expect(body.branch).toBe('main')
+    expect(body.workDir).toBe(activeWorktree)
+    expect(body.worktree).toEqual({
+      enabled: true,
+      path: activeWorktree,
+      plannedPath: activeWorktree,
+      sourceWorkDir: await fs.realpath(workDir),
+      slug: 'desktop-main-12345678',
+      branch: 'worktree-desktop-main-12345678',
+    })
   })
 
   it('DELETE /api/sessions/:id should delete the session', async () => {
