@@ -811,22 +811,33 @@ fn terminal_kill(state: State<'_, TerminalState>, session_id: u32) -> Result<(),
 }
 
 #[tauri::command]
-fn macos_notification_permission_state() -> Result<String, String> {
-    macos_notifications::permission_state()
+async fn macos_notification_permission_state() -> Result<String, String> {
+    run_notification_bridge(macos_notifications::permission_state).await
 }
 
 #[tauri::command]
-fn macos_request_notification_permission() -> Result<String, String> {
-    macos_notifications::request_permission()
+async fn macos_request_notification_permission() -> Result<String, String> {
+    run_notification_bridge(macos_notifications::request_permission).await
 }
 
 #[tauri::command]
-fn macos_send_notification(
+async fn macos_send_notification(
     title: String,
     body: Option<String>,
     target: Option<String>,
 ) -> Result<bool, String> {
-    macos_notifications::send_notification(title, body, target)
+    run_notification_bridge(move || macos_notifications::send_notification(title, body, target))
+        .await
+}
+
+async fn run_notification_bridge<T, F>(operation: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(operation)
+        .await
+        .map_err(|err| format!("notification bridge worker failed: {err}"))?
 }
 
 fn decode_terminal_output(pending: &mut Vec<u8>, chunk: &[u8]) -> String {
@@ -1344,7 +1355,7 @@ mod tests {
     use super::{
         decode_terminal_output, default_utf8_locale, ensure_utf8_locale,
         has_meaningful_intersection, is_persistable_window_state, parse_env_block,
-        StoredWindowState,
+        run_notification_bridge, StoredWindowState,
     };
     use std::collections::HashMap;
 
@@ -1481,6 +1492,17 @@ mod tests {
         assert_eq!(env.get("LANG").map(String::as_str), Some("zh_CN.UTF-8"));
         assert_eq!(env.get("LC_CTYPE").map(String::as_str), Some("en_US.UTF8"));
         assert_eq!(env.get("LC_ALL").map(String::as_str), Some("C.UTF-8"));
+    }
+
+    #[test]
+    fn notification_bridge_runs_off_the_calling_thread() {
+        let caller_thread = std::thread::current().id();
+        let ran_on_worker = tauri::async_runtime::block_on(run_notification_bridge(move || {
+            Ok(std::thread::current().id() != caller_thread)
+        }))
+        .expect("notification bridge operation should complete");
+
+        assert!(ran_on_worker);
     }
 }
 
