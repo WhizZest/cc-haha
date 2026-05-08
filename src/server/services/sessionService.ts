@@ -20,8 +20,9 @@ import {
 } from '../../utils/context.js'
 import { getCanonicalName } from '../../utils/model/model.js'
 import {
-  prepareSessionWorkspace,
+  resolveSessionWorkspaceLaunch,
   type CreateSessionRepositoryOptions,
+  type PreparedSessionWorkspace,
 } from './repositoryLaunchService.js'
 
 // ============================================================================
@@ -47,6 +48,7 @@ export type SessionLaunchInfo = {
   filePath: string
   projectDir: string
   workDir: string
+  repository?: PreparedSessionWorkspace['repository']
   transcriptMessageCount: number
   customTitle: string | null
 }
@@ -253,7 +255,8 @@ export class SessionService {
     entries: RawEntry[],
     fallbackProjectDir?: string,
   ): string | null {
-    for (const entry of entries) {
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const entry = entries[i]
       if (entry.type === 'session-meta' && typeof (entry as Record<string, unknown>).workDir === 'string') {
         return (entry as Record<string, unknown>).workDir as string
       }
@@ -267,6 +270,24 @@ export class SessionService {
     }
 
     return fallbackProjectDir ? this.desanitizePath(fallbackProjectDir) : null
+  }
+
+  private resolveRepositoryFromEntries(entries: RawEntry[]): PreparedSessionWorkspace['repository'] | undefined {
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const repository = (entries[i] as Record<string, unknown>)?.repository
+      if (repository && typeof repository === 'object') {
+        return repository as PreparedSessionWorkspace['repository']
+      }
+    }
+    return undefined
+  }
+
+  private countTranscriptMessages(entries: RawEntry[]): number {
+    return entries.filter((entry) =>
+      !entry.isMeta &&
+      !!entry.message?.role &&
+      (entry.type === 'user' || entry.type === 'assistant' || entry.type === 'system')
+    ).length
   }
 
   // --------------------------------------------------------------------------
@@ -1213,7 +1234,7 @@ export class SessionService {
     // expand relative paths — in bundled sidecar mode the server's cwd is
     // typically '/'. Callers (IM adapters) already send absolute realPath,
     // but we log here so cwd regressions are caught early.
-    const preparedWorkspace = await prepareSessionWorkspace(
+    const preparedWorkspace = await resolveSessionWorkspaceLaunch(
       resolvedWorkDir,
       repositoryOptions,
       sessionId,
@@ -1358,26 +1379,21 @@ export class SessionService {
 
     const entries = await this.readJsonlFile(found.filePath)
     const workDir = this.resolveWorkDirFromEntries(entries, found.projectDir) || process.cwd()
+    const repository = this.resolveRepositoryFromEntries(entries)
     let customTitle: string | null = null
-    let transcriptMessageCount = 0
 
     for (const entry of entries) {
       if (entry.type === 'custom-title' && typeof entry.customTitle === 'string') {
         customTitle = entry.customTitle
       }
-      if (
-        !entry.isMeta &&
-        entry.message?.role &&
-        (entry.type === 'user' || entry.type === 'assistant' || entry.type === 'system')
-      ) {
-        transcriptMessageCount++
-      }
     }
+    const transcriptMessageCount = this.countTranscriptMessages(entries)
 
     return {
       filePath: found.filePath,
       projectDir: found.projectDir,
       workDir,
+      repository,
       transcriptMessageCount,
       customTitle,
     }
@@ -1407,6 +1423,7 @@ export class SessionService {
 
     const entries = await this.readJsonlFile(found.filePath)
     const workDir = this.resolveWorkDirFromEntries(entries, found.projectDir) || fallbackWorkDir || process.cwd()
+    const repository = this.resolveRepositoryFromEntries(entries)
     const now = new Date().toISOString()
 
     const initialEntry = {
@@ -1424,6 +1441,7 @@ export class SessionService {
       type: 'session-meta',
       isMeta: true,
       workDir,
+      repository,
       timestamp: now,
     }
 
@@ -1436,15 +1454,22 @@ export class SessionService {
 
   async appendSessionMetadata(
     sessionId: string,
-    metadata: { workDir: string; customTitle?: string | null }
+    metadata: {
+      workDir: string
+      customTitle?: string | null
+      repository?: PreparedSessionWorkspace['repository']
+    }
   ): Promise<void> {
     const found = await this.findSessionFile(sessionId)
     if (!found) return
 
+    const entries = await this.readJsonlFile(found.filePath)
+    const repository = metadata.repository ?? this.resolveRepositoryFromEntries(entries)
     await this.appendJsonlEntry(found.filePath, {
       type: 'session-meta',
       isMeta: true,
       workDir: metadata.workDir,
+      repository,
       timestamp: new Date().toISOString(),
     })
 
@@ -1455,6 +1480,38 @@ export class SessionService {
         timestamp: new Date().toISOString(),
       })
     }
+  }
+
+  async deletePlaceholderSessionFiles(
+    sessionId: string,
+    keepWorkDir: string,
+  ): Promise<number> {
+    if (!this.isValidSessionId(sessionId)) return 0
+
+    const projectsDir = this.getProjectsDir()
+    let projectDirs: import('node:fs').Dirent[]
+    try {
+      projectDirs = await fs.readdir(projectsDir, { withFileTypes: true })
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return 0
+      throw err
+    }
+
+    const keepProjectDir = this.sanitizePath(keepWorkDir)
+    let removed = 0
+    for (const projectDir of projectDirs) {
+      if (!projectDir.isDirectory()) continue
+      if (projectDir.name === keepProjectDir) continue
+      const filePath = path.join(projectsDir, projectDir.name, `${sessionId}.jsonl`)
+      const entries = await this.readJsonlFile(filePath)
+      if (entries.length === 0) continue
+
+      if (this.countTranscriptMessages(entries) > 0) continue
+
+      await fs.rm(filePath, { force: true })
+      removed += 1
+    }
+    return removed
   }
 
   async trimSessionMessagesFrom(

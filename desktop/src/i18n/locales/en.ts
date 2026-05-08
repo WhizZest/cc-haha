@@ -707,8 +707,8 @@ export const en = {
   'repoLaunch.worktreeIsolated': 'Isolated worktree',
   'repoLaunch.selectWorktree': 'Select worktree mode',
   'repoLaunch.missingWorkdir': 'Working directory is missing.',
-  'repoLaunch.dirtyWarning': 'Uncommitted changes detected. Direct switching will be blocked; enable isolated worktree to continue without touching this folder.',
-  'repoLaunch.checkedOutWarning': 'This branch is already checked out elsewhere. Enable isolated worktree or choose another branch.',
+  'repoLaunch.dirtyWarning': 'Uncommitted changes detected. Direct switching may be blocked; use isolated worktree to continue without touching this folder.',
+  'repoLaunch.checkedOutWarning': 'Selected branch is already checked out in another worktree. Direct launch may be blocked by Git; use "Isolated worktree" to avoid changing directories.',
 
   // ─── Chat Input ──────────────────────────────────────
   'chat.placeholder': 'Ask Claude to edit, debug or explain...',
@@ -1190,6 +1190,9 @@ export const en = {
 
   // ─── Server Status Verbs ──────────────────────────────────────
   'serverVerb.Thinking': 'Thinking',
+  'serverVerb.Running': 'Running',
+  'serverVerb.Working': 'Working',
+  'serverVerb.Creating worktree': 'Creating worktree',
   'serverVerb.Task started': 'Task started',
   'serverVerb.Task in progress': 'Task in progress',
 

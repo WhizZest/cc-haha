@@ -9,7 +9,10 @@ import * as path from 'node:path'
 import * as os from 'node:os'
 import { SessionService } from '../services/sessionService.js'
 import { sessionService } from '../services/sessionService.js'
-import { getRepositoryContext } from '../services/repositoryLaunchService.js'
+import {
+  getRepositoryContext,
+  prepareSessionWorkspace,
+} from '../services/repositoryLaunchService.js'
 import { conversationService } from '../services/conversationService.js'
 import { clearCommandsCache } from '../../commands.js'
 import { sanitizePath } from '../../utils/sessionStoragePortable.js'
@@ -846,6 +849,60 @@ describe('SessionService', () => {
     expect(workDir).toBe('/tmp/from-meta')
   })
 
+  it('should recover workDir from the latest session-meta entry', async () => {
+    const sessionId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+    await writeSessionFile('-tmp-project', sessionId, [
+      makeSnapshotEntry(),
+      makeSessionMetaEntry('/tmp/old-worktree'),
+      makeUserEntry('Hello'),
+      makeSessionMetaEntry('/tmp/latest-worktree'),
+    ])
+
+    const workDir = await service.getSessionWorkDir(sessionId)
+    expect(workDir).toBe('/tmp/latest-worktree')
+  })
+
+  it('should preserve repository metadata when replacing placeholder transcripts', async () => {
+    const workDir = await createCleanGitRepo(tmpDir)
+    const { sessionId, workDir: sessionWorkDir } = await service.createSession(
+      workDir,
+      { branch: 'feature/rail', worktree: true },
+    )
+
+    await service.clearSessionTranscript(sessionId, sessionWorkDir)
+    const launchInfo = await service.getSessionLaunchInfo(sessionId)
+
+    expect(launchInfo?.workDir).toBe(sessionWorkDir)
+    expect(launchInfo?.repository).toMatchObject({
+      requestedWorkDir: await fs.realpath(workDir),
+      worktree: true,
+      worktreePath: expect.stringContaining(path.join('.claude', 'worktrees', 'desktop-feature-rail-')),
+    })
+  })
+
+  it('should remove stale placeholder files after native CLI worktree startup', async () => {
+    const sessionId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+    const sourceFile = await writeSessionFile('-tmp-source', sessionId, [
+      makeSnapshotEntry(),
+      { type: 'session-meta', isMeta: true, workDir: '/tmp/source', timestamp: '2026-01-01T00:00:00.000Z' },
+      { type: 'session-meta', isMeta: true, workDir: '/tmp/source/.claude/worktrees/desktop-agent', timestamp: '2026-01-01T00:00:02.000Z' },
+    ])
+    const worktreeFile = await writeSessionFile('-tmp-source--claude-worktrees-desktop-agent', sessionId, [
+      makeSnapshotEntry(),
+      { type: 'session-meta', isMeta: true, workDir: '/tmp/source/.claude/worktrees/desktop-agent', timestamp: '2026-01-01T00:00:01.000Z' },
+      makeUserEntry('Hello from worktree'),
+    ])
+
+    const removed = await service.deletePlaceholderSessionFiles(
+      sessionId,
+      '/tmp/source/.claude/worktrees/desktop-agent',
+    )
+
+    expect(removed).toBe(1)
+    await expect(fs.access(sourceFile)).rejects.toThrow()
+    await expect(fs.access(worktreeFile)).resolves.toBeNull()
+  })
+
   it('should recover workDir from transcript cwd when session-meta is missing', async () => {
     const sessionId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
     await writeSessionFile('-tmp-project', sessionId, [
@@ -885,41 +942,43 @@ describe('SessionService', () => {
     expect(entry.type).toBe('file-history-snapshot')
   })
 
-  it('should create a session in an isolated worktree from the selected branch', async () => {
+  it('should defer isolated worktree creation until CLI startup', async () => {
     const workDir = await createCleanGitRepo(tmpDir)
     const { sessionId, workDir: sessionWorkDir } = await service.createSession(
       workDir,
       { branch: 'feature/rail', worktree: true },
     )
 
-    expect(sessionWorkDir).toContain(path.join('.claude', 'worktrees', 'desktop-feature-rail-'))
-    expect(git(sessionWorkDir, 'branch', '--show-current')).toStartWith('worktree-desktop-feature-rail-')
-    expect(await fs.readFile(path.join(sessionWorkDir, 'feature.txt'), 'utf-8')).toBe('feature\n')
+    expect(sessionWorkDir).toBe(await fs.realpath(workDir))
+    expect(git(workDir, 'branch', '--show-current')).toBe('main\n')
     expect(git(workDir, 'status', '--porcelain')).toBe('')
-    expect(await fs.readFile(path.join(workDir, '.git', 'info', 'exclude'), 'utf-8'))
-      .toContain('.claude/worktrees/')
 
-    const sanitized = sanitizePath(await fs.realpath(sessionWorkDir))
+    const sanitized = sanitizePath(await fs.realpath(workDir))
     const filePath = path.join(tmpDir, 'projects', sanitized, `${sessionId}.jsonl`)
     const lines = (await fs.readFile(filePath, 'utf-8')).trim().split('\n')
     const metadata = JSON.parse(lines[1]!)
-    expect(metadata.workDir).toBe(sessionWorkDir)
+    const plannedWorktreePath = metadata.repository.worktreePath as string
+    expect(metadata.workDir).toBe(await fs.realpath(workDir))
     expect(metadata.repository).toMatchObject({
       requestedWorkDir: await fs.realpath(workDir),
       branch: 'feature/rail',
       worktree: true,
-      worktreePath: sessionWorkDir,
+      baseRef: 'feature/rail',
+      worktreePath: expect.stringContaining(path.join('.claude', 'worktrees', 'desktop-feature-rail-')),
+      worktreeBranch: expect.stringContaining('worktree-desktop-feature-rail-'),
+      worktreeSlug: expect.stringContaining('desktop-feature-rail-'),
     })
+    await expect(fs.access(plannedWorktreePath)).rejects.toThrow()
 
     const context = await getRepositoryContext(workDir)
     expect(context.state).toBe('ok')
     expect(context.branches.map((branch) => branch.name)).not.toContain(
-      path.basename(sessionWorkDir).replace(/^desktop-/, 'worktree-desktop-'),
+      path.basename(plannedWorktreePath).replace(/^desktop-/, 'worktree-desktop-'),
     )
     expect(context.branches.some((branch) => branch.name.startsWith('worktree-desktop-'))).toBe(false)
   })
 
-  it('should switch a clean checkout to the selected branch when worktree isolation is disabled', async () => {
+  it('should defer direct branch switching until CLI startup when worktree isolation is disabled', async () => {
     const workDir = await createCleanGitRepo(tmpDir)
     const { sessionId, workDir: sessionWorkDir } = await service.createSession(
       workDir,
@@ -927,8 +986,7 @@ describe('SessionService', () => {
     )
 
     expect(sessionWorkDir).toBe(await fs.realpath(workDir))
-    expect(git(workDir, 'branch', '--show-current')).toBe('feature/rail\n')
-    expect(await fs.readFile(path.join(workDir, 'feature.txt'), 'utf-8')).toBe('feature\n')
+    expect(git(workDir, 'branch', '--show-current')).toBe('main\n')
 
     const sanitized = sanitizePath(await fs.realpath(workDir))
     const filePath = path.join(tmpDir, 'projects', sanitized, `${sessionId}.jsonl`)
@@ -943,53 +1001,55 @@ describe('SessionService', () => {
     })
   })
 
-  it('should not select hidden desktop worktree branches when no branch is requested', async () => {
+  it('should not list hidden desktop worktree branches', async () => {
     const workDir = await createCleanGitRepo(tmpDir)
-    const { workDir: firstWorktreeDir } = await service.createSession(
-      workDir,
-      { branch: 'feature/rail', worktree: true },
-    )
+    const existingWorktree = path.join(tmpDir, `desktop-hidden-${Date.now()}`)
+    git(workDir, 'worktree', 'add', '-b', 'worktree-desktop-hidden', existingWorktree, 'feature/rail')
 
-    const { workDir: nestedWorktreeDir } = await service.createSession(
-      firstWorktreeDir,
-      { worktree: true },
-    )
+    expect(git(existingWorktree, 'branch', '--show-current')).toBe('worktree-desktop-hidden\n')
 
-    expect(nestedWorktreeDir).toContain(path.join('.claude', 'worktrees', 'desktop-'))
-    expect(git(nestedWorktreeDir, 'branch', '--show-current')).toStartWith('worktree-desktop-')
-
-    const context = await getRepositoryContext(firstWorktreeDir)
+    const context = await getRepositoryContext(existingWorktree)
     expect(context.state).toBe('ok')
-    expect(context.currentBranch).toStartWith('worktree-desktop-')
+    expect(context.currentBranch).toBe('worktree-desktop-hidden')
     expect(context.branches.some((branch) => branch.name === context.currentBranch)).toBe(false)
     expect(context.branches.some((branch) => branch.name.startsWith('worktree-desktop-'))).toBe(false)
   })
 
-  it('should reject direct branch launch from a dirty working tree with a stable error code', async () => {
+  it('should defer dirty direct branch launch validation until CLI startup', async () => {
     const workDir = await createCleanGitRepo(tmpDir)
     await fs.writeFile(path.join(workDir, 'README.md'), 'main\nlocal-pricing-edit\n')
 
-    await expect(service.createSession(
+    const { sessionId } = await service.createSession(
       workDir,
       { branch: 'feature/rail', worktree: false },
-    )).rejects.toMatchObject({ code: 'REPOSITORY_DIRTY_WORKTREE' })
+    )
 
     expect(git(workDir, 'branch', '--show-current')).toBe('main\n')
     expect(await fs.readFile(path.join(workDir, 'README.md'), 'utf-8'))
       .toContain('local-pricing-edit')
+    await expect(prepareSessionWorkspace(
+      workDir,
+      { branch: 'feature/rail', worktree: false },
+      sessionId,
+    )).rejects.toMatchObject({ code: 'REPOSITORY_DIRTY_WORKTREE' })
   })
 
-  it('should reject direct branch launch when the branch is checked out elsewhere', async () => {
+  it('should defer checked-out direct branch launch validation until CLI startup', async () => {
     const workDir = await createCleanGitRepo(tmpDir)
     const existingWorktree = path.join(tmpDir, `existing-feature-rail-${Date.now()}`)
     git(workDir, 'worktree', 'add', existingWorktree, 'feature/rail')
 
-    await expect(service.createSession(
+    const { sessionId } = await service.createSession(
       workDir,
       { branch: 'feature/rail', worktree: false },
-    )).rejects.toMatchObject({ code: 'REPOSITORY_BRANCH_CHECKED_OUT' })
+    )
 
     expect(git(workDir, 'branch', '--show-current')).toBe('main\n')
+    await expect(prepareSessionWorkspace(
+      workDir,
+      { branch: 'feature/rail', worktree: false },
+      sessionId,
+    )).rejects.toMatchObject({ code: 'REPOSITORY_BRANCH_CHECKED_OUT' })
   })
 
   it('should reject branch launch outside Git repositories with a stable error code', async () => {
@@ -1270,7 +1330,7 @@ describe('Sessions API', () => {
     expect(body.worktrees.some((worktree) => worktree.path === realWorkDir && worktree.current)).toBe(true)
   })
 
-  it('GET /api/sessions/recent-projects should hide internal desktop worktree branch metadata', async () => {
+  it('GET /api/sessions/recent-projects should keep pending repository launches on the source project', async () => {
     const workDir = await createCleanGitRepo(tmpDir)
     const createRes = await fetch(`${baseUrl}/api/sessions`, {
       method: 'POST',
@@ -1292,8 +1352,8 @@ describe('Sessions API', () => {
     const project = body.projects.find((candidate) => candidate.realPath === created.workDir)
     expect(project).toBeDefined()
     expect(project?.projectName).toBe(path.basename(workDir))
-    expect(project?.branch).toBeNull()
-    expect(project?.realPath).toContain('/.claude/worktrees/')
+    expect(project?.branch).toBe('main')
+    expect(project?.realPath).toBe(await fs.realpath(workDir))
   })
 
   it('GET /api/sessions/:id should return session detail', async () => {

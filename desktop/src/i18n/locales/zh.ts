@@ -709,8 +709,8 @@ export const zh: Record<TranslationKey, string> = {
   'repoLaunch.worktreeIsolated': '独立工作树',
   'repoLaunch.selectWorktree': '选择工作树模式',
   'repoLaunch.missingWorkdir': '工作目录不存在。',
-  'repoLaunch.dirtyWarning': '检测到未提交变更，直接切换会被阻止。开启独立工作树即可继续，且不会改动当前目录。',
-  'repoLaunch.checkedOutWarning': '这个分支已在其他工作树中检出。请开启独立工作树或选择其他分支。',
+  'repoLaunch.dirtyWarning': '检测到未提交变更，直接切换可能会被阻止；使用独立工作树可以继续，且不会改动当前目录。',
+  'repoLaunch.checkedOutWarning': '选中的分支已在其他工作树中检出。直接启动可能会被 Git 阻止；使用“独立工作树”可以避免切换当前目录。',
 
   // ─── Chat Input ──────────────────────────────────────
   'chat.placeholder': '让 Claude 编辑、调试或解释代码...',
@@ -1192,6 +1192,9 @@ export const zh: Record<TranslationKey, string> = {
 
   // ─── Server Status Verbs ──────────────────────────────────────
   'serverVerb.Thinking': '思考中',
+  'serverVerb.Running': '运行中',
+  'serverVerb.Working': '处理中',
+  'serverVerb.Creating worktree': '正在创建工作树',
   'serverVerb.Task started': '任务已启动',
   'serverVerb.Task in progress': '任务进行中',
 

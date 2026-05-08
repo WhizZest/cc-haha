@@ -69,6 +69,22 @@ const prewarmedSessions = new Set<string>()
 const prewarmIdleTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const DEFAULT_PREWARM_IDLE_TIMEOUT_MS = 5 * 60_000
 
+async function sendRepositoryStartupStatus(
+  ws: ServerWebSocket<WebSocketData>,
+  sessionId: string,
+  reason: 'user_message' | 'prewarm_session',
+): Promise<void> {
+  if (reason !== 'user_message') return
+
+  const launchInfo = await sessionService.getSessionLaunchInfo(sessionId).catch(() => null)
+  const repository = launchInfo?.repository
+  if (!repository) return
+
+  if (repository.worktree) {
+    sendMessage(ws, { type: 'status', state: 'thinking', verb: 'Creating worktree' })
+  }
+}
+
 export function getSlashCommands(sessionId: string): Array<{ name: string; description: string }> {
   return sessionSlashCommands.get(sessionId) || []
 }
@@ -164,7 +180,7 @@ export const handleWebSocket = {
           break
 
         case 'prewarm_session':
-          handlePrewarmSession(ws)
+          void handlePrewarmSession(ws)
           break
 
         case 'stop_generation':
@@ -368,9 +384,15 @@ async function handleDesktopClearCommand(
   })
 }
 
-function handlePrewarmSession(ws: ServerWebSocket<WebSocketData>) {
+async function handlePrewarmSession(ws: ServerWebSocket<WebSocketData>) {
   const { sessionId } = ws.data
   if (conversationService.hasSession(sessionId) || sessionStartupPromises.has(sessionId)) {
+    return
+  }
+
+  const launchInfo = await sessionService.getSessionLaunchInfo(sessionId).catch(() => null)
+  if (launchInfo?.repository) {
+    console.log(`[WS] Skipping prewarm for pending repository launch session ${sessionId}`)
     return
   }
 
@@ -752,6 +774,14 @@ function markPrewarmed(sessionId: string) {
 
 function cacheSessionInitMetadata(sessionId: string, cliMsg: any) {
   if (cliMsg?.type !== 'system' || cliMsg.subtype !== 'init') return
+  if (typeof cliMsg.cwd === 'string' && cliMsg.cwd.trim()) {
+    void (async () => {
+      await sessionService.appendSessionMetadata(sessionId, {
+        workDir: cliMsg.cwd,
+      })
+      await sessionService.deletePlaceholderSessionFiles(sessionId, cliMsg.cwd)
+    })()
+  }
   if (cliMsg.slash_commands && Array.isArray(cliMsg.slash_commands)) {
     sessionSlashCommands.set(sessionId, cliMsg.slash_commands.map((cmd: any) => ({
       name: typeof cmd === 'string' ? cmd : (cmd.name || cmd.command || ''),
@@ -837,6 +867,7 @@ async function ensureCliSessionStarted(
     const sdkUrl =
       `ws://${ws.data.serverHost}:${ws.data.serverPort}/sdk/${sessionId}` +
       `?token=${encodeURIComponent(crypto.randomUUID())}`
+    await sendRepositoryStartupStatus(ws, sessionId, reason)
     console.log(`[WS] Starting CLI for ${sessionId} due to ${reason}`)
     await conversationService.startSession(sessionId, workDir, sdkUrl, runtimeSettings)
   })()

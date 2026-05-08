@@ -418,7 +418,7 @@ describe('EmptySession', () => {
     expect(branchButton.querySelector('span')?.className).toContain('truncate')
   })
 
-  it('defaults to isolated worktree when the fallback branch is checked out elsewhere', async () => {
+  it('keeps current worktree selectable when the fallback branch is checked out elsewhere', async () => {
     mocks.getRepositoryContext.mockResolvedValueOnce(okRepositoryContext({
       currentBranch: null,
       defaultBranch: 'main',
@@ -455,18 +455,20 @@ describe('EmptySession', () => {
 
     await waitFor(() => {
       expect(screen.getByText('main')).toBeInTheDocument()
-      expect(screen.getByText('Isolated worktree')).toBeInTheDocument()
+      expect(screen.getByText('Current worktree')).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: /Select worktree mode: Isolated worktree/ }))
-    expect(await screen.findByRole('option', { name: 'Current worktree' })).toBeDisabled()
+    expect(screen.getByText('Selected branch is already checked out in another worktree. Direct launch may be blocked by Git; use "Isolated worktree" to avoid changing directories.')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Select worktree mode: Current worktree/ }))
+    expect(await screen.findByRole('option', { name: 'Current worktree' })).not.toBeDisabled()
 
     fireEvent.click(screen.getByRole('button', { name: /Run/i }))
 
     await waitFor(() => {
       expect(mocks.createSession).toHaveBeenCalledWith({
         workDir: '/workspace/project',
-        repository: { branch: 'main', worktree: true },
+        repository: { branch: 'main', worktree: false },
       })
     })
   })

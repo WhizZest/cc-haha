@@ -348,4 +348,27 @@ describe('ConversationService', () => {
     expect(args).toContain('--effort')
     expect(args).toContain('max')
   })
+
+  test('buildSessionCliArgs starts pending desktop worktrees through the native CLI flag', () => {
+    const service = new ConversationService() as any
+    const args = service.buildSessionCliArgs(
+      '123e4567-e89b-12d3-a456-426614174000',
+      'ws://127.0.0.1:3456/sdk/test-session?token=test-token',
+      false,
+      undefined,
+      {
+        requestedWorkDir: '/tmp/source-repo',
+        repoRoot: '/tmp/source-repo',
+        branch: 'feature/rail',
+        worktree: true,
+        baseRef: 'feature/rail',
+        worktreeSlug: 'desktop-feature-rail-123e4567',
+      },
+    ) as string[]
+
+    expect(args).toContain('--worktree')
+    expect(args).toContain('desktop-feature-rail-123e4567')
+    expect(args).toContain('--worktree-base-ref')
+    expect(args).toContain('feature/rail')
+  })
 })

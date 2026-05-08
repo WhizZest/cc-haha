@@ -234,18 +234,6 @@ export function RepositoryLaunchControls({
     return null
   }, [context, selectedBranch, t, useWorktree])
 
-  const requiresIsolation = useMemo(() => {
-    if (context?.state !== 'ok' || !selectedBranch) return false
-    if (selectedBranch.name === context.currentBranch) return false
-    return context.dirty || selectedBranch.checkedOut
-  }, [context, selectedBranch])
-
-  useEffect(() => {
-    if (requiresIsolation && !useWorktree) {
-      onUseWorktreeChange(true)
-    }
-  }, [onUseWorktreeChange, requiresIsolation, useWorktree])
-
   const selectBranch = (candidate: RepositoryBranchInfo) => {
     onBranchChange(candidate.name)
     setBranchMenuOpen(false)
@@ -253,7 +241,6 @@ export function RepositoryLaunchControls({
   }
 
   const selectWorktreeMode = (enabled: boolean) => {
-    if (!enabled && requiresIsolation) return
     onUseWorktreeChange(enabled)
     setWorktreeMenuOpen(false)
   }
@@ -481,8 +468,6 @@ export function RepositoryLaunchControls({
               type="button"
               role="option"
               aria-selected={!useWorktree}
-              aria-disabled={requiresIsolation}
-              disabled={requiresIsolation}
               onClick={() => selectWorktreeMode(false)}
               className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-brand)]/35 disabled:cursor-not-allowed disabled:opacity-45 ${
                 !useWorktree ? 'bg-[var(--color-surface-hover)]' : 'hover:bg-[var(--color-surface-hover)]'

@@ -9,9 +9,10 @@ import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import * as os from 'os'
+import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { ConversationService, ConversationStartupError, conversationService } from '../services/conversationService.js'
-import { SessionService } from '../services/sessionService.js'
+import { SessionService, sessionService } from '../services/sessionService.js'
 import { ProviderService } from '../services/providerService.js'
 
 async function rmWithRetry(targetPath: string): Promise<void> {
@@ -456,6 +457,36 @@ describe('WebSocket Chat Integration', () => {
   let wsUrl: string
   let tmpDir: string
 
+  function git(cwd: string, ...args: string[]): string {
+    return execFileSync('git', args, {
+      cwd,
+      encoding: 'utf8',
+    })
+  }
+
+  async function createCleanGitRepo(): Promise<string> {
+    const workDir = path.join(
+      tmpDir,
+      `repo-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    )
+
+    await fs.mkdir(workDir, { recursive: true })
+    git(workDir, 'init')
+    git(workDir, 'config', 'user.email', 'conversations@example.com')
+    git(workDir, 'config', 'user.name', 'Conversations Test')
+    git(workDir, 'checkout', '-b', 'main')
+    await fs.writeFile(path.join(workDir, 'README.md'), 'main\n')
+    git(workDir, 'add', 'README.md')
+    git(workDir, 'commit', '-m', 'initial')
+    git(workDir, 'checkout', '-b', 'feature/rail')
+    await fs.writeFile(path.join(workDir, 'feature.txt'), 'feature\n')
+    git(workDir, 'add', 'feature.txt')
+    git(workDir, 'commit', '-m', 'feature')
+    git(workDir, 'checkout', 'main')
+
+    return workDir
+  }
+
   async function withMockInitMode<T>(
     mode: string | undefined,
     callback: () => Promise<T>,
@@ -815,6 +846,37 @@ describe('WebSocket Chat Integration', () => {
     // Verify thinking was first status
     const statusMsgs = messages.filter((m) => m.type === 'status')
     expect(statusMsgs[0].state).toBe('thinking')
+  })
+
+  it('emits a worktree startup status before launching a repository session', async () => {
+    const repoDir = await createCleanGitRepo()
+    const { sessionId } = await sessionService.createSession(repoDir, {
+      branch: 'feature/rail',
+      worktree: true,
+    })
+
+    const messages = await runTurn(sessionId, 'Hello from repository launch test')
+    const statusVerbs = messages
+      .filter((msg) => msg.type === 'status')
+      .map((msg) => msg.verb)
+
+    expect(statusVerbs).toContain('Creating worktree')
+  })
+
+  it('keeps the default startup status for current-worktree repository sessions', async () => {
+    const repoDir = await createCleanGitRepo()
+    const { sessionId } = await sessionService.createSession(repoDir, {
+      branch: 'main',
+      worktree: false,
+    })
+
+    const messages = await runTurn(sessionId, 'Hello from current worktree launch test')
+    const statusVerbs = messages
+      .filter((msg) => msg.type === 'status')
+      .map((msg) => msg.verb)
+
+    expect(statusVerbs).toContain('Thinking')
+    expect(statusVerbs).not.toContain('Creating worktree')
   })
 
   it('emits the derived session title before the first response completes', async () => {

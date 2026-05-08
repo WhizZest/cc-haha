@@ -78,6 +78,7 @@ export type PreparedSessionWorkspace = {
     baseRef: string
     worktreePath?: string
     worktreeBranch?: string
+    worktreeSlug?: string
   }
 }
 
@@ -421,6 +422,38 @@ async function createDesktopWorktree(
       baseRef: branch.baseRef,
       worktreePath,
       worktreeBranch: branchName,
+      worktreeSlug: slug,
+    },
+  }
+}
+
+function planIsolatedWorktree(
+  context: RepositoryContextResult,
+  branch: ResolvedBranch,
+  sessionId: string,
+): PreparedSessionWorkspace {
+  if (context.state !== 'ok' || !context.repoRoot) {
+    throw repositoryBadRequest(
+      REPOSITORY_ERROR.notGit,
+      'Cannot create a worktree outside a Git repository',
+    )
+  }
+
+  const slug = safeWorktreeSlug(branch.name, sessionId)
+  const worktreePath = path.join(context.repoRoot, '.claude', 'worktrees', slug)
+  const branchName = worktreeBranchName(slug)
+
+  return {
+    workDir: context.workDir,
+    repository: {
+      requestedWorkDir: context.workDir,
+      repoRoot: context.repoRoot,
+      branch: branch.name,
+      worktree: true,
+      baseRef: branch.baseRef,
+      worktreePath,
+      worktreeBranch: branchName,
+      worktreeSlug: slug,
     },
   }
 }
@@ -528,4 +561,57 @@ export async function prepareSessionWorkspace(
   return options.worktree
     ? createDesktopWorktree(context, branch, sessionId)
     : switchExistingCheckout(context, branch)
+}
+
+export async function resolveSessionWorkspaceLaunch(
+  workDir: string,
+  options: CreateSessionRepositoryOptions | undefined,
+  sessionId: string,
+): Promise<PreparedSessionWorkspace> {
+  const absWorkDir = await resolveDirectory(workDir)
+
+  if (!options?.branch && !options?.worktree) {
+    return { workDir: absWorkDir }
+  }
+
+  const context = await getRepositoryContext(absWorkDir)
+  if (context.state !== 'ok') {
+    if (context.state === 'not_git_repo') {
+      throw repositoryBadRequest(
+        REPOSITORY_ERROR.notGit,
+        'Selected directory is not a Git repository',
+      )
+    }
+    if (context.state === 'missing_workdir') {
+      throw repositoryBadRequest(
+        REPOSITORY_ERROR.workdirMissing,
+        context.error || 'Working directory does not exist',
+      )
+    }
+    throw repositoryBadRequest(
+      REPOSITORY_ERROR.contextFailed,
+      context.error || 'Failed to inspect Git repository',
+    )
+  }
+
+  const branch = resolveBranch(context, options.branch)
+  if (!branch) {
+    throw repositoryBadRequest(
+      REPOSITORY_ERROR.branchNotFound,
+      `Branch not found: ${options.branch || 'default branch'}`,
+    )
+  }
+
+  return options.worktree
+    ? planIsolatedWorktree(context, branch, sessionId)
+    : {
+        workDir: context.workDir,
+        repository: {
+          requestedWorkDir: context.workDir,
+          repoRoot: context.repoRoot,
+          branch: branch.name,
+          worktree: false,
+          baseRef: branch.baseRef,
+        },
+      }
 }

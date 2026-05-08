@@ -265,7 +265,7 @@ function worktreePathFor(repoRoot: string, slug: string): string {
 async function getOrCreateWorktree(
   repoRoot: string,
   slug: string,
-  options?: { prNumber?: number },
+  options?: { prNumber?: number; baseRef?: string },
 ): Promise<WorktreeCreateResult> {
   const worktreePath = worktreePathFor(repoRoot, slug)
   const worktreeBranch = worktreeBranchName(slug)
@@ -305,6 +305,8 @@ async function getOrCreateWorktree(
       )
     }
     baseBranch = 'FETCH_HEAD'
+  } else if (options?.baseRef) {
+    baseBranch = options.baseRef
   } else {
     // If origin/<branch> already exists locally, skip fetch. In large repos
     // (210k files, 16M objects) fetch burns ~6-8s on a local commit-graph
@@ -734,7 +736,7 @@ export async function createWorktreeForSession(
   sessionId: string,
   slug: string,
   tmuxSessionName?: string,
-  options?: { prNumber?: number },
+  options?: { prNumber?: number; baseRef?: string },
 ): Promise<WorktreeSession> {
   // Must run before the hook branch below — hooks receive the raw slug as an
   // argument, and the git branch builds a path from it via path.join.

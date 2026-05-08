@@ -1147,6 +1147,9 @@ async function run(): Promise<CommanderCommand> {
     const worktreeOption = isWorktreeModeEnabled() ? (options as {
       worktree?: boolean | string;
     }).worktree : undefined;
+    const worktreeBaseRef = isWorktreeModeEnabled() ? (options as {
+      worktreeBaseRef?: string;
+    }).worktreeBaseRef : undefined;
     let worktreeName = typeof worktreeOption === 'string' ? worktreeOption : undefined;
     const worktreeEnabled = worktreeOption !== undefined;
 
@@ -1940,7 +1943,7 @@ async function run(): Promise<CommanderCommand> {
       const {
         setup
       } = await import('./setup.js');
-      await setup(preSetupCwd, permissionMode, allowDangerouslySkipPermissions, worktreeEnabled, worktreeName, tmuxEnabled, sessionId ? validateUuid(sessionId) : undefined, worktreePRNumber, messagingSocketPath);
+      await setup(preSetupCwd, permissionMode, allowDangerouslySkipPermissions, worktreeEnabled, worktreeName, tmuxEnabled, sessionId ? validateUuid(sessionId) : undefined, worktreePRNumber, worktreeBaseRef, messagingSocketPath);
     })();
     const commandsPromise = worktreeEnabled ? null : getCommands(preSetupCwd);
     const agentDefsPromise = worktreeEnabled ? null : getAgentDefinitionsWithOverrides(preSetupCwd);
@@ -3863,6 +3866,7 @@ async function run(): Promise<CommanderCommand> {
 
   // Worktree flags
   program.option('-w, --worktree [name]', 'Create a new git worktree for this session (optionally specify a name)');
+  program.addOption(new Option('--worktree-base-ref <ref>', 'Create --worktree from this git ref instead of the default branch').hideHelp());
   program.option('--tmux', 'Create a tmux session for the worktree (requires --worktree). Uses iTerm2 native panes when available; use --tmux=classic for traditional tmux.');
   if (canUserConfigureAdvisor()) {
     program.addOption(new Option('--advisor <model>', 'Enable the server-side advisor tool with the specified model (alias or full ID).').hideHelp());
