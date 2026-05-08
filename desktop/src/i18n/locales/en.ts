@@ -706,7 +706,6 @@ export const en = {
   'repoLaunch.worktreeCurrent': 'Current worktree',
   'repoLaunch.worktreeIsolated': 'Isolated worktree',
   'repoLaunch.selectWorktree': 'Select worktree mode',
-  'repoLaunch.notGit': 'Current project is not a Git repository.',
   'repoLaunch.missingWorkdir': 'Working directory is missing.',
   'repoLaunch.dirtyWarning': 'Uncommitted changes detected. Direct switching will be blocked; enable isolated worktree to continue without touching this folder.',
   'repoLaunch.checkedOutWarning': 'This branch is already checked out elsewhere. Enable isolated worktree or choose another branch.',

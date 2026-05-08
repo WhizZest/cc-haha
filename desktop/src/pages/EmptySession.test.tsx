@@ -103,6 +103,20 @@ function okRepositoryContext(overrides: Partial<RepositoryContextResult> = {}): 
   }
 }
 
+function notGitRepositoryContext(): RepositoryContextResult {
+  return {
+    state: 'not_git_repo',
+    workDir: '/workspace/project',
+    repoRoot: null,
+    repoName: null,
+    currentBranch: null,
+    defaultBranch: null,
+    dirty: false,
+    branches: [],
+    worktrees: [],
+  }
+}
+
 describe('EmptySession', () => {
   const initialSessionState = useSessionStore.getInitialState()
   const initialChatState = useChatStore.getInitialState()
@@ -197,6 +211,33 @@ describe('EmptySession', () => {
       attachments: [],
     })
     expect(mocks.wsConnect).toHaveBeenCalledWith('draft-session')
+  })
+
+  it('starts in a selected non-Git project without showing a repository warning', async () => {
+    mocks.getRepositoryContext.mockResolvedValueOnce(notGitRepositoryContext())
+
+    render(<EmptySession />)
+
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: 'draft question', selectionStart: 14 },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Pick project' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Run/i })).not.toBeDisabled()
+    })
+
+    expect(screen.queryByText('Current project is not a Git repository.')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Select branch:/ })).not.toBeInTheDocument()
+    expect(screen.queryByText('Current worktree')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Run/i }))
+
+    await waitFor(() => {
+      expect(mocks.createSession).toHaveBeenCalledWith({
+        workDir: '/workspace/project',
+      })
+    })
   })
 
   it('shows an actionable repository error when direct branch switching is blocked', async () => {

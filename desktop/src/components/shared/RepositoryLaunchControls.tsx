@@ -37,7 +37,7 @@ const VIEWPORT_GUTTER = 12
 function stateMessage(context: RepositoryContextResult | null, error: string | null) {
   if (error) return error
   if (!context) return null
-  if (context.state === 'not_git_repo') return 'not_git'
+  if (context.state === 'not_git_repo') return null
   if (context.state === 'missing_workdir') return 'missing'
   if (context.state === 'error') return context.error || 'error'
   return null
@@ -370,9 +370,7 @@ export function RepositoryLaunchControls({
         <div className="flex items-center gap-2 px-1 text-[11px] text-[var(--color-text-tertiary)]">
           <AlertCircle size={13} className="shrink-0" />
           <span>
-            {message === 'not_git'
-              ? t('repoLaunch.notGit')
-              : message === 'missing'
+            {message === 'missing'
                 ? t('repoLaunch.missingWorkdir')
                 : message}
           </span>
