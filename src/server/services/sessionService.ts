@@ -24,6 +24,7 @@ import {
   type CreateSessionRepositoryOptions,
   type PreparedSessionWorkspace,
 } from './repositoryLaunchService.js'
+import { cleanSessionTitleSource } from '../../utils/sessionTitleText.js'
 
 // ============================================================================
 // Types
@@ -734,7 +735,8 @@ export class SessionService {
     for (let i = entries.length - 1; i >= 0; i--) {
       const e = entries[i]!
       if (e.type === 'ai-title' && e.aiTitle) {
-        return e.aiTitle as string
+        const title = cleanSessionTitleSource(String(e.aiTitle))
+        if (title) return title
       }
     }
 
@@ -752,7 +754,8 @@ export class SessionService {
           if (textBlock) text = textBlock.text as string
         }
         if (text) {
-          return text.length > 80 ? text.slice(0, 80) + '...' : text
+          const title = cleanSessionTitleSource(text)
+          if (title) return title.length > 80 ? title.slice(0, 80) + '...' : title
         }
       }
     }

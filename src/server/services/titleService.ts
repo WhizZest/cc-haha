@@ -11,6 +11,7 @@ import { SettingsService } from './settingsService.js'
 import { sessionService } from './sessionService.js'
 import { PROVIDER_PRESETS } from '../config/providerPresets.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
+import { cleanSessionTitleSource, hasSessionTitleMarkup } from '../../utils/sessionTitleText.js'
 
 const TITLE_MAX_LEN = 50
 
@@ -33,7 +34,7 @@ Bad (wrong case): {"title": "Fix Login Button On Mobile"}`
  * Returns first sentence, collapsed to single line, max 50 chars.
  */
 export function deriveTitle(raw: string): string | undefined {
-  const clean = raw.replace(/<[^>]+>[^<]*<\/[^>]+>/g, '').trim()
+  const clean = cleanSessionTitleSource(raw)
   const firstSentence = /^(.*?[.!?。！？])\s/.exec(clean)?.[1] ?? clean
   const flat = firstSentence.replace(/\s+/g, ' ').trim()
   if (!flat) return undefined
@@ -50,7 +51,7 @@ export async function generateTitle(
   conversationText: string,
   providerId?: string | null,
 ): Promise<string | null> {
-  const trimmed = conversationText.trim()
+  const trimmed = cleanSessionTitleSource(conversationText)
   if (!trimmed) return null
 
   try {
@@ -157,8 +158,13 @@ function parseTitleJson(candidate: string): string | null {
 }
 
 function normalizeTitle(title: string): string | null {
-  const clean = title.replace(/\s+/g, ' ').trim()
-  if (!clean || clean.length > 60 || looksLikeStructuredTitleFragment(clean)) return null
+  const clean = cleanSessionTitleSource(title)
+  if (
+    !clean ||
+    clean.length > 60 ||
+    looksLikeStructuredTitleFragment(clean) ||
+    hasSessionTitleMarkup(clean)
+  ) return null
   return clean
 }
 

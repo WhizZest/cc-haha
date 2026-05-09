@@ -1304,6 +1304,41 @@ describe('SessionService', () => {
     expect(detail!.title).toBe('This is my first real question')
   })
 
+  it('should derive a clean title from slash command breadcrumb metadata', async () => {
+    const sessionId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+    await writeSessionFile('-tmp-project', sessionId, [
+      makeSnapshotEntry(),
+      makeUserEntry([
+        '<command-message>frontend-design</command-message>',
+        '<command-name>/frontend-design</command-name>',
+        '<command-args>@website 重新设计首页</command-args>',
+      ].join('\n')),
+    ])
+
+    const detail = await service.getSession(sessionId)
+    expect(detail!.title).toBe('/frontend-design @website 重新设计首页')
+  })
+
+  it('should display stored AI titles without internal XML tags', async () => {
+    const sessionId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+    await writeSessionFile('-tmp-project', sessionId, [
+      makeSnapshotEntry(),
+      makeUserEntry('fallback message'),
+      {
+        type: 'ai-title',
+        aiTitle: [
+          '<command-message>frontend-design</command-message>',
+          '<command-name>/frontend-design</command-name>',
+          '<command-args>@website</command-args>',
+        ].join(' '),
+        timestamp: '2026-01-01T00:02:00.000Z',
+      },
+    ])
+
+    const detail = await service.getSession(sessionId)
+    expect(detail!.title).toBe('/frontend-design @website')
+  })
+
   it('should truncate long titles to 80 chars', async () => {
     const sessionId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
     const longMessage = 'A'.repeat(120)
