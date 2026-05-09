@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { ApiError } from '../api/client'
 import { settingsApi } from '../api/settings'
 import { modelsApi } from '../api/models'
 import { h5AccessApi } from '../api/h5Access'
@@ -30,7 +31,7 @@ type SettingsStore = {
   desktopNotificationsEnabled: boolean
   webSearch: WebSearchSettings
   h5Access: H5AccessSettings
-  h5AccessGeneratedToken: string | null
+  h5AccessError: string | null
   isLoading: boolean
   error: string | null
 
@@ -45,14 +46,13 @@ type SettingsStore = {
   setSkipWebFetchPreflight: (enabled: boolean) => Promise<void>
   setDesktopNotificationsEnabled: (enabled: boolean) => Promise<void>
   setWebSearch: (settings: WebSearchSettings) => Promise<void>
-  enableH5Access: () => Promise<void>
+  enableH5Access: () => Promise<string>
   disableH5Access: () => Promise<void>
-  regenerateH5AccessToken: () => Promise<void>
+  regenerateH5AccessToken: () => Promise<string>
   updateH5AccessSettings: (input: {
     allowedOrigins?: string[]
     publicBaseUrl?: string | null
   }) => Promise<void>
-  clearH5AccessGeneratedToken: () => void
 }
 
 const DEFAULT_H5_ACCESS_SETTINGS: H5AccessSettings = {
@@ -75,20 +75,21 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   desktopNotificationsEnabled: false,
   webSearch: { mode: 'auto', tavilyApiKey: '', braveApiKey: '' },
   h5Access: DEFAULT_H5_ACCESS_SETTINGS,
-  h5AccessGeneratedToken: null,
+  h5AccessError: null,
   isLoading: false,
   error: null,
 
   fetchAll: async () => {
     set({ isLoading: true, error: null })
     try {
-      const [{ mode }, modelsRes, { model }, { level }, userSettings, h5AccessRes] = await Promise.all([
+      const previousH5Access = get().h5Access
+      const [{ mode }, modelsRes, { model }, { level }, userSettings, h5AccessResult] = await Promise.all([
         settingsApi.getPermissionMode(),
         modelsApi.list(),
         modelsApi.getCurrent(),
         modelsApi.getEffort(),
         settingsApi.getUser(),
-        h5AccessApi.get().catch(() => ({ settings: DEFAULT_H5_ACCESS_SETTINGS })),
+        loadH5AccessSettings(previousH5Access),
       ])
       const theme = userSettings.theme === 'dark' ? 'dark' : 'light'
       useUIStore.getState().setTheme(theme)
@@ -103,8 +104,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         skipWebFetchPreflight: userSettings.skipWebFetchPreflight !== false,
         desktopNotificationsEnabled: userSettings.desktopNotificationsEnabled === true,
         webSearch: normalizeWebSearchSettings(userSettings.webSearch),
-        h5Access: normalizeH5AccessSettings(h5AccessRes.settings),
-        h5AccessGeneratedToken: null,
+        h5Access: h5AccessResult.settings,
+        h5AccessError: h5AccessResult.error,
         isLoading: false,
         error: null,
       })
@@ -117,11 +118,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   },
 
   fetchH5Access: async () => {
-    const { settings } = await h5AccessApi.get()
-    set({
-      h5Access: normalizeH5AccessSettings(settings),
-      h5AccessGeneratedToken: null,
-    })
+    const result = await loadH5AccessSettings(get().h5Access)
+    set({ h5Access: result.settings, h5AccessError: result.error })
   },
 
   setPermissionMode: async (mode) => {
@@ -220,38 +218,61 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   },
 
   enableH5Access: async () => {
-    const { settings, token } = await h5AccessApi.enable()
-    set({
-      h5Access: normalizeH5AccessSettings(settings),
-      h5AccessGeneratedToken: token,
-    })
+    set({ h5AccessError: null })
+    try {
+      const { settings, token } = await h5AccessApi.enable()
+      set({
+        h5Access: normalizeH5AccessSettings(settings),
+        h5AccessError: null,
+      })
+      return token
+    } catch (error) {
+      set({ h5AccessError: getErrorMessage(error, 'Failed to enable H5 access.') })
+      throw error
+    }
   },
 
   disableH5Access: async () => {
-    const { settings } = await h5AccessApi.disable()
-    set({
-      h5Access: normalizeH5AccessSettings(settings),
-      h5AccessGeneratedToken: null,
-    })
+    set({ h5AccessError: null })
+    try {
+      const { settings } = await h5AccessApi.disable()
+      set({
+        h5Access: normalizeH5AccessSettings(settings),
+        h5AccessError: null,
+      })
+    } catch (error) {
+      set({ h5AccessError: getErrorMessage(error, 'Failed to disable H5 access.') })
+      throw error
+    }
   },
 
   regenerateH5AccessToken: async () => {
-    const { settings, token } = await h5AccessApi.regenerate()
-    set({
-      h5Access: normalizeH5AccessSettings(settings),
-      h5AccessGeneratedToken: token,
-    })
+    set({ h5AccessError: null })
+    try {
+      const { settings, token } = await h5AccessApi.regenerate()
+      set({
+        h5Access: normalizeH5AccessSettings(settings),
+        h5AccessError: null,
+      })
+      return token
+    } catch (error) {
+      set({ h5AccessError: getErrorMessage(error, 'Failed to regenerate the H5 token.') })
+      throw error
+    }
   },
 
   updateH5AccessSettings: async (input) => {
-    const { settings } = await h5AccessApi.update(input)
-    set({
-      h5Access: normalizeH5AccessSettings(settings),
-    })
-  },
-
-  clearH5AccessGeneratedToken: () => {
-    set({ h5AccessGeneratedToken: null })
+    set({ h5AccessError: null })
+    try {
+      const { settings } = await h5AccessApi.update(input)
+      set({
+        h5Access: normalizeH5AccessSettings(settings),
+        h5AccessError: null,
+      })
+    } catch (error) {
+      set({ h5AccessError: getErrorMessage(error, 'Failed to update H5 access settings.') })
+      throw error
+    }
   },
 }))
 
@@ -270,4 +291,42 @@ function normalizeH5AccessSettings(settings: H5AccessSettings | undefined): H5Ac
     allowedOrigins: Array.isArray(settings?.allowedOrigins) ? settings.allowedOrigins : [],
     publicBaseUrl: settings?.publicBaseUrl ?? null,
   }
+}
+
+async function loadH5AccessSettings(previousH5Access: H5AccessSettings): Promise<{
+  settings: H5AccessSettings
+  error: string | null
+}> {
+  try {
+    const { settings } = await h5AccessApi.get()
+    return {
+      settings: normalizeH5AccessSettings(settings),
+      error: null,
+    }
+  } catch (error) {
+    if (isLegacyH5EndpointError(error)) {
+      return {
+        settings: DEFAULT_H5_ACCESS_SETTINGS,
+        error: null,
+      }
+    }
+
+    return {
+      settings: previousH5Access,
+      error: getErrorMessage(error, 'Failed to load H5 access settings.'),
+    }
+  }
+}
+
+function isLegacyH5EndpointError(error: unknown) {
+  const status = error instanceof ApiError
+    ? error.status
+    : typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number'
+      ? error.status
+      : null
+  return status === 404 || status === 405
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message.trim().length > 0 ? error.message : fallback
 }

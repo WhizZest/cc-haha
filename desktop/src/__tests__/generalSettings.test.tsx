@@ -18,6 +18,9 @@ const desktopNotificationsMock = vi.hoisted(() => ({
   requestDesktopNotificationPermission: vi.fn(),
   openDesktopNotificationSettings: vi.fn(),
 }))
+const clipboardMock = vi.hoisted(() => ({
+  copyTextToClipboard: vi.fn(),
+}))
 const providerStoreState = {
   providers: [] as SavedProvider[],
   activeId: null as string | null,
@@ -54,6 +57,7 @@ vi.mock('../api/providers', () => ({
 }))
 
 vi.mock('../lib/desktopNotifications', () => desktopNotificationsMock)
+vi.mock('../components/chat/clipboard', () => clipboardMock)
 
 vi.mock('../components/settings/ClaudeOfficialLogin', () => ({
   ClaudeOfficialLogin: () => <div data-testid="claude-official-login" />,
@@ -94,6 +98,7 @@ vi.mock('../components/chat/CodeViewer', () => ({
 
 describe('Settings > General tab', () => {
   beforeEach(() => {
+    vi.useRealTimers()
     MOCK_DELETE_PROVIDER.mockReset()
     desktopNotificationsMock.getDesktopNotificationPermission.mockReset()
     desktopNotificationsMock.notifyDesktop.mockReset()
@@ -103,6 +108,8 @@ describe('Settings > General tab', () => {
     desktopNotificationsMock.notifyDesktop.mockResolvedValue(true)
     desktopNotificationsMock.requestDesktopNotificationPermission.mockResolvedValue('granted')
     desktopNotificationsMock.openDesktopNotificationSettings.mockResolvedValue(true)
+    clipboardMock.copyTextToClipboard.mockReset()
+    clipboardMock.copyTextToClipboard.mockResolvedValue(true)
     MOCK_GET_SETTINGS.mockResolvedValue({})
     MOCK_UPDATE_SETTINGS.mockResolvedValue({})
     providerStoreState.providers = []
@@ -132,7 +139,7 @@ describe('Settings > General tab', () => {
         allowedOrigins: [],
         publicBaseUrl: null,
       },
-      h5AccessGeneratedToken: null,
+      h5AccessError: null,
       setThinkingEnabled: vi.fn().mockImplementation(async (enabled: boolean) => {
         useSettingsStore.setState({ thinkingEnabled: enabled })
       }),
@@ -145,11 +152,10 @@ describe('Settings > General tab', () => {
       setWebSearch: vi.fn().mockImplementation(async (webSearch) => {
         useSettingsStore.setState({ webSearch })
       }),
-      enableH5Access: vi.fn(),
+      enableH5Access: vi.fn().mockResolvedValue('h5_default_generated_token'),
       disableH5Access: vi.fn(),
-      regenerateH5AccessToken: vi.fn(),
+      regenerateH5AccessToken: vi.fn().mockResolvedValue('h5_default_regenerated_token'),
       updateH5AccessSettings: vi.fn(),
-      clearH5AccessGeneratedToken: vi.fn(),
     })
 
     useUIStore.setState({ pendingSettingsTab: null })
@@ -280,6 +286,17 @@ describe('Settings > General tab', () => {
         allowedOrigins: ['https://phone.example'],
         publicBaseUrl: 'https://phone.example/app',
       },
+      regenerateH5AccessToken: vi.fn().mockImplementation(async () => {
+        useSettingsStore.setState({
+          h5Access: {
+            enabled: true,
+            tokenPreview: 'h5d4e5f6',
+            allowedOrigins: ['https://phone.example'],
+            publicBaseUrl: 'https://phone.example/app',
+          },
+        })
+        return 'h5_regenerated_secret_token'
+      }),
     })
     render(<Settings />)
 
@@ -291,6 +308,103 @@ describe('Settings > General tab', () => {
     })
 
     expect(useSettingsStore.getState().regenerateH5AccessToken).toHaveBeenCalledTimes(1)
+  })
+
+  it('copies the generated H5 token and clears it after a successful copy', async () => {
+    useSettingsStore.setState({
+      enableH5Access: vi.fn().mockImplementation(async () => {
+        useSettingsStore.setState({
+          h5Access: {
+            enabled: true,
+            tokenPreview: 'h5z1y2x3',
+            allowedOrigins: [],
+            publicBaseUrl: null,
+          },
+        })
+        return 'h5_secret_token'
+      }),
+    })
+    render(<Settings />)
+
+    fireEvent.click(screen.getByText('General'))
+    const section = screen.getByRole('region', { name: 'H5 Access' })
+
+    await act(async () => {
+      fireEvent.click(within(section).getByLabelText('Enable H5 access'))
+    })
+
+    expect(await within(section).findByText('h5_secret_token')).toBeInTheDocument()
+
+    await act(async () => {
+      fireEvent.click(within(section).getByRole('button', { name: 'Copy' }))
+    })
+
+    expect(clipboardMock.copyTextToClipboard).toHaveBeenCalledWith('h5_secret_token')
+    expect(within(section).queryByText('h5_secret_token')).not.toBeInTheDocument()
+  })
+
+  it('copies the H5 URL when available', async () => {
+    useSettingsStore.setState({
+      h5Access: {
+        enabled: true,
+        tokenPreview: 'h5url123',
+        allowedOrigins: ['https://phone.example'],
+        publicBaseUrl: 'https://phone.example/app',
+      },
+    })
+    render(<Settings />)
+
+    fireEvent.click(screen.getByText('General'))
+    const section = screen.getByRole('region', { name: 'H5 Access' })
+
+    await act(async () => {
+      fireEvent.click(within(section).getByRole('button', { name: 'Copy H5 URL' }))
+    })
+
+    expect(clipboardMock.copyTextToClipboard).toHaveBeenCalledWith('https://phone.example/app')
+  })
+
+  it('clears the generated token after the visibility timeout', async () => {
+    vi.useFakeTimers()
+    useSettingsStore.setState({
+      enableH5Access: vi.fn().mockImplementation(async () => {
+        useSettingsStore.setState({
+          h5Access: {
+            enabled: true,
+            tokenPreview: 'h5timeout',
+            allowedOrigins: [],
+            publicBaseUrl: null,
+          },
+        })
+        return 'h5_timeout_token'
+      }),
+    })
+    render(<Settings />)
+
+    fireEvent.click(screen.getByText('General'))
+    const section = screen.getByRole('region', { name: 'H5 Access' })
+
+    await act(async () => {
+      fireEvent.click(within(section).getByLabelText('Enable H5 access'))
+    })
+
+    expect(within(section).getByText('h5_timeout_token')).toBeInTheDocument()
+
+    await act(async () => {
+      vi.advanceTimersByTime(30_000)
+    })
+
+    expect(within(section).queryByText('h5_timeout_token')).not.toBeInTheDocument()
+  })
+
+  it('shows the H5-specific store error when the H5 settings load failed', () => {
+    useSettingsStore.setState({ h5AccessError: 'H5 unavailable' })
+    render(<Settings />)
+
+    fireEvent.click(screen.getByText('General'))
+
+    const section = screen.getByRole('region', { name: 'H5 Access' })
+    expect(within(section).getByText('H5 unavailable')).toBeInTheDocument()
   })
 
   it('updates H5 public URL and allowed origins from General settings', async () => {

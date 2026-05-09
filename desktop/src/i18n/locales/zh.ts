@@ -679,6 +679,7 @@ export const zh: Record<TranslationKey, string> = {
   'settings.general.h5AccessGeneratedToken': '生成的令牌',
   'settings.general.h5AccessGeneratedTokenHint': '仅显示一次，请立即复制并像密码一样保存。',
   'settings.general.h5AccessCopy': '复制',
+  'settings.general.h5AccessCopyUrl': '复制 H5 链接',
   'settings.general.h5AccessHideToken': '隐藏令牌',
   'settings.general.h5AccessPublicUrl': '公开访问 URL',
   'settings.general.h5AccessPublicUrlPlaceholder': 'https://chat.example.com',

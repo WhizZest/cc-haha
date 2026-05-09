@@ -47,6 +47,8 @@ import {
 } from '../lib/providerSettingsJson'
 import { copyTextToClipboard } from '../components/chat/clipboard'
 
+const H5_GENERATED_TOKEN_TIMEOUT_MS = 30_000
+
 export function Settings() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('providers')
   const pendingSettingsTab = useUIStore((s) => s.pendingSettingsTab)
@@ -1358,21 +1360,20 @@ function GeneralSettings() {
     webSearch,
     setWebSearch,
     h5Access,
-    h5AccessGeneratedToken,
+    h5AccessError,
     enableH5Access,
     disableH5Access,
     regenerateH5AccessToken,
     updateH5AccessSettings,
-    clearH5AccessGeneratedToken,
   } = useSettingsStore()
   const t = useTranslation()
   const [webSearchDraft, setWebSearchDraft] = useState(webSearch)
   const [h5PublicBaseUrlDraft, setH5PublicBaseUrlDraft] = useState(h5Access.publicBaseUrl ?? '')
   const [h5AllowedOriginsDraft, setH5AllowedOriginsDraft] = useState(serializeAllowedOrigins(h5Access.allowedOrigins))
+  const [generatedH5Token, setGeneratedH5Token] = useState<string | null>(null)
   const [notificationPermission, setNotificationPermission] = useState<DesktopNotificationPermission>('default')
   const [notificationActionRunning, setNotificationActionRunning] = useState(false)
   const [h5ActionRunning, setH5ActionRunning] = useState(false)
-  const [h5Error, setH5Error] = useState<string | null>(null)
   const webSearchDirty = JSON.stringify(webSearchDraft) !== JSON.stringify(webSearch)
   const h5AccessUrl = h5Access.enabled && h5Access.publicBaseUrl ? h5Access.publicBaseUrl : null
   const h5AccessDirty =
@@ -1387,6 +1388,18 @@ function GeneralSettings() {
     setH5PublicBaseUrlDraft(h5Access.publicBaseUrl ?? '')
     setH5AllowedOriginsDraft(serializeAllowedOrigins(h5Access.allowedOrigins))
   }, [h5Access])
+
+  useEffect(() => {
+    if (!generatedH5Token) return
+
+    const timeout = window.setTimeout(() => {
+      setGeneratedH5Token(null)
+    }, H5_GENERATED_TOKEN_TIMEOUT_MS)
+
+    return () => {
+      window.clearTimeout(timeout)
+    }
+  }, [generatedH5Token])
 
   useEffect(() => {
     let cancelled = false
@@ -1477,11 +1490,10 @@ function GeneralSettings() {
 
   const runH5Action = async (action: () => Promise<void>) => {
     setH5ActionRunning(true)
-    setH5Error(null)
     try {
       await action()
-    } catch (error) {
-      setH5Error(error instanceof Error ? error.message : t('settings.general.h5AccessError'))
+    } catch {
+      // The store owns H5-specific error state.
     } finally {
       setH5ActionRunning(false)
     }
@@ -1490,10 +1502,12 @@ function GeneralSettings() {
   const handleH5AccessToggle = async (enabled: boolean) => {
     await runH5Action(async () => {
       if (enabled) {
-        await enableH5Access()
+        const token = await enableH5Access()
+        setGeneratedH5Token(token)
         return
       }
 
+      setGeneratedH5Token(null)
       await disableH5Access()
     })
   }
@@ -1507,8 +1521,17 @@ function GeneralSettings() {
     })
   }
 
-  const handleH5Copy = async (value: string) => {
-    await copyTextToClipboard(value)
+  const handleGeneratedH5TokenCopy = async () => {
+    if (!generatedH5Token) return
+    const copied = await copyTextToClipboard(generatedH5Token)
+    if (copied) {
+      setGeneratedH5Token(null)
+    }
+  }
+
+  const handleH5UrlCopy = async () => {
+    if (!h5AccessUrl) return
+    await copyTextToClipboard(h5AccessUrl)
   }
 
   return (
@@ -1682,7 +1705,10 @@ function GeneralSettings() {
                 <Button
                   size="sm"
                   variant="secondary"
-                  onClick={() => void runH5Action(regenerateH5AccessToken)}
+                  onClick={() => void runH5Action(async () => {
+                    const token = await regenerateH5AccessToken()
+                    setGeneratedH5Token(token)
+                  })}
                   disabled={!h5Access.enabled || h5ActionRunning}
                 >
                   {t('settings.general.h5AccessRegenerate')}
@@ -1690,7 +1716,7 @@ function GeneralSettings() {
               </div>
             </div>
 
-            {h5AccessGeneratedToken && (
+            {generatedH5Token && (
               <div className="mt-4 border-t border-[var(--color-border)]/60 pt-4">
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-sm font-medium text-[var(--color-text-primary)]">
@@ -1700,21 +1726,21 @@ function GeneralSettings() {
                     <Button
                       size="sm"
                       variant="secondary"
-                      onClick={() => void handleH5Copy(h5AccessGeneratedToken)}
+                      onClick={() => void handleGeneratedH5TokenCopy()}
                     >
                       {t('settings.general.h5AccessCopy')}
                     </Button>
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={() => clearH5AccessGeneratedToken()}
+                      onClick={() => setGeneratedH5Token(null)}
                     >
                       {t('settings.general.h5AccessHideToken')}
                     </Button>
                   </div>
                 </div>
                 <code className="mt-2 block rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs text-[var(--color-text-primary)] break-all">
-                  {h5AccessGeneratedToken}
+                  {generatedH5Token}
                 </code>
                 <p className="mt-2 text-xs text-[var(--color-text-tertiary)]">
                   {t('settings.general.h5AccessGeneratedTokenHint')}
@@ -1769,7 +1795,8 @@ function GeneralSettings() {
                     size="sm"
                     variant="secondary"
                     className="shrink-0"
-                    onClick={() => void handleH5Copy(h5AccessUrl)}
+                    aria-label={t('settings.general.h5AccessCopyUrl')}
+                    onClick={() => void handleH5UrlCopy()}
                   >
                     {t('settings.general.h5AccessCopy')}
                   </Button>
@@ -1780,9 +1807,9 @@ function GeneralSettings() {
             <p className="mt-4 text-xs text-[var(--color-text-tertiary)] leading-5">
               {t('settings.general.h5AccessSafetyNote')}
             </p>
-            {h5Error && (
+            {h5AccessError && (
               <p className="mt-2 text-xs text-[var(--color-error)]">
-                {h5Error}
+                {h5AccessError}
               </p>
             )}
           </div>

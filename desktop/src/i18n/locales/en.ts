@@ -677,6 +677,7 @@ export const en = {
   'settings.general.h5AccessGeneratedToken': 'Generated token',
   'settings.general.h5AccessGeneratedTokenHint': 'Shown once. Copy it now and store it like a password.',
   'settings.general.h5AccessCopy': 'Copy',
+  'settings.general.h5AccessCopyUrl': 'Copy H5 URL',
   'settings.general.h5AccessHideToken': 'Hide token',
   'settings.general.h5AccessPublicUrl': 'Public URL',
   'settings.general.h5AccessPublicUrlPlaceholder': 'https://chat.example.com',
