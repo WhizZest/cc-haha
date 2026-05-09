@@ -180,7 +180,8 @@ class WebSocketManager {
 export function buildSessionWebSocketUrl(sessionId: string) {
   const url = new URL(getBaseUrl())
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-  url.pathname = `/ws/${encodeURIComponent(sessionId)}`
+  const basePath = url.pathname === '/' ? '' : url.pathname.replace(/\/$/, '')
+  url.pathname = `${basePath}/ws/${encodeURIComponent(sessionId)}`
 
   const token = getAuthToken()
   if (token) {

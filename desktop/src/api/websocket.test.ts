@@ -114,4 +114,12 @@ describe('wsManager reconnect buffering', () => {
       'wss://remote.example.com/ws/secure-session',
     )
   })
+
+  it('preserves reverse-proxy subpaths when building websocket URLs', () => {
+    clientMocks.baseUrl = 'https://public.example.com/app'
+
+    expect(buildSessionWebSocketUrl('s1')).toBe(
+      'wss://public.example.com/app/ws/s1',
+    )
+  })
 })

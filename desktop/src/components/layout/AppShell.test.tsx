@@ -169,6 +169,21 @@ describe('AppShell boot flow', () => {
     expect(screen.queryByText('app.serverFailed')).not.toBeInTheDocument()
   })
 
+  it('shows the H5 connection view for unreachable remote browser startup failures', async () => {
+    mocks.initializeDesktopServerUrl.mockRejectedValueOnce(
+      Object.assign(new Error('Unable to reach https://remote.example.com. Check the server URL or network access.'), {
+        name: 'H5ConnectionRequiredError',
+        serverUrl: 'https://remote.example.com',
+      }),
+    )
+
+    render(<AppShell />)
+
+    expect(await screen.findByText('h5 connection view')).toBeInTheDocument()
+    expect(screen.getByText('Unable to reach https://remote.example.com. Check the server URL or network access.')).toBeInTheDocument()
+    expect(screen.queryByText('app.serverFailed')).not.toBeInTheDocument()
+  })
+
   it('retries bootstrap after a successful H5 connection', async () => {
     mocks.initializeDesktopServerUrl
       .mockRejectedValueOnce(
