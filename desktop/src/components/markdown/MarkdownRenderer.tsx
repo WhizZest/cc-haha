@@ -6,7 +6,7 @@ import { MermaidRenderer } from '../chat/MermaidRenderer'
 
 type Props = {
   content: string
-  variant?: 'default' | 'document'
+  variant?: 'default' | 'document' | 'compact'
   className?: string
 }
 
@@ -136,8 +136,24 @@ const DOCUMENT_PROSE_CLASSES = `
   prose-li:my-1.5
   prose-table:my-0`
 
-function getProseClasses(variant: 'default' | 'document', className?: string) {
-  return [BASE_PROSE_CLASSES, variant === 'document' ? DOCUMENT_PROSE_CLASSES : '', className ?? '']
+const COMPACT_PROSE_CLASSES = `
+  prose-p:my-1 prose-p:text-xs prose-p:leading-5 prose-p:text-[var(--color-text-secondary)]
+  prose-headings:mt-2 prose-headings:mb-1 prose-headings:leading-snug
+  prose-h1:text-base prose-h2:text-sm prose-h3:text-xs prose-h4:text-xs
+  prose-blockquote:my-2 prose-blockquote:border-l-2 prose-blockquote:border-[var(--color-outline-variant)] prose-blockquote:pl-3 prose-blockquote:text-[var(--color-text-secondary)]
+  prose-code:text-[12px]
+  prose-ul:my-1 prose-ol:my-1 prose-ul:pl-4 prose-ol:pl-4
+  prose-li:my-0.5 prose-li:text-xs prose-li:leading-5 prose-li:text-[var(--color-text-secondary)]
+  prose-table:text-xs
+  [&_.md-table-wrap]:my-2`
+
+function getProseClasses(variant: 'default' | 'document' | 'compact', className?: string) {
+  return [
+    BASE_PROSE_CLASSES,
+    variant === 'document' ? DOCUMENT_PROSE_CLASSES : '',
+    variant === 'compact' ? COMPACT_PROSE_CLASSES : '',
+    className ?? '',
+  ]
     .filter(Boolean)
     .join(' ')
 }

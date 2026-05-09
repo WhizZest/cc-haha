@@ -51,6 +51,22 @@ describe('MarkdownRenderer', () => {
     expect(screen.getByText('Body copy.')).toBeInTheDocument()
   })
 
+  it('applies compact prose classes for dense surfaces', () => {
+    const { container } = render(
+      <MarkdownRenderer
+        content={'**Done**\n\n- One\n- Two'}
+        variant="compact"
+      />,
+    )
+
+    const root = container.firstChild as HTMLDivElement
+    expect(root).toBeInTheDocument()
+    expect(root.className).toContain('prose-p:text-xs')
+    expect(root.className).toContain('prose-li:text-xs')
+    expect(screen.getByText('Done')).toBeInTheDocument()
+    expect(screen.getByText('One')).toBeInTheDocument()
+  })
+
   it('uses semantic code colors for inline code so both themes stay readable', () => {
     const { container } = render(
       <MarkdownRenderer content={'Use `claude-sonnet-4-6` for balanced speed.'} />,
