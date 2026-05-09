@@ -1,9 +1,10 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   initializeDesktopServerUrl: vi.fn(),
+  isTauriRuntime: false,
   fetchAll: vi.fn(),
   restoreTabs: vi.fn(),
   connectToSession: vi.fn(),
@@ -15,7 +16,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../lib/desktopRuntime', () => ({
   initializeDesktopServerUrl: mocks.initializeDesktopServerUrl,
-  isTauriRuntime: () => false,
+  isTauriRuntime: () => mocks.isTauriRuntime,
+  isH5ConnectionRequiredError: (error: unknown) =>
+    error instanceof Error && error.name === 'H5ConnectionRequiredError',
 }))
 
 vi.mock('../../stores/settingsStore', () => ({
@@ -68,6 +71,16 @@ vi.mock('./TabBar', () => ({
   TabBar: () => <nav>tabs loaded</nav>,
 }))
 
+vi.mock('./H5ConnectionView', () => ({
+  H5ConnectionView: ({ error, onConnected }: { error?: string | null; onConnected: () => void }) => (
+    <div>
+      <div>h5 connection view</div>
+      <div>{error}</div>
+      <button type="button" onClick={onConnected}>retry h5 bootstrap</button>
+    </div>
+  ),
+}))
+
 vi.mock('../shared/Toast', () => ({
   ToastContainer: () => null,
 }))
@@ -81,6 +94,7 @@ import { AppShell } from './AppShell'
 describe('AppShell boot flow', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.isTauriRuntime = false
     mocks.initializeDesktopServerUrl.mockResolvedValue('http://127.0.0.1:3456')
     mocks.fetchAll.mockResolvedValue(undefined)
     mocks.restoreTabs.mockResolvedValue(undefined)
@@ -138,5 +152,55 @@ describe('AppShell boot flow', () => {
     await waitFor(() => {
       expect(mocks.connectToSession).toHaveBeenCalledWith('session-1')
     })
+  })
+
+  it('shows the H5 connection view in browser mode when startup needs H5 auth', async () => {
+    mocks.initializeDesktopServerUrl.mockRejectedValueOnce(
+      Object.assign(new Error('Enter your H5 token to continue.'), {
+        name: 'H5ConnectionRequiredError',
+        serverUrl: 'https://remote.example.com',
+      }),
+    )
+
+    render(<AppShell />)
+
+    expect(await screen.findByText('h5 connection view')).toBeInTheDocument()
+    expect(screen.getByText('Enter your H5 token to continue.')).toBeInTheDocument()
+    expect(screen.queryByText('app.serverFailed')).not.toBeInTheDocument()
+  })
+
+  it('retries bootstrap after a successful H5 connection', async () => {
+    mocks.initializeDesktopServerUrl
+      .mockRejectedValueOnce(
+        Object.assign(new Error('The saved H5 token is no longer valid.'), {
+          name: 'H5ConnectionRequiredError',
+          serverUrl: 'https://remote.example.com',
+        }),
+      )
+      .mockResolvedValueOnce('https://remote.example.com')
+
+    render(<AppShell />)
+
+    expect(await screen.findByText('h5 connection view')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'retry h5 bootstrap' }))
+
+    await screen.findByText('sidebar loaded')
+    expect(mocks.initializeDesktopServerUrl).toHaveBeenCalledTimes(2)
+    expect(mocks.fetchAll).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the Tauri startup error path unchanged', async () => {
+    mocks.isTauriRuntime = true
+    mocks.initializeDesktopServerUrl.mockRejectedValueOnce(
+      Object.assign(new Error('desktop server startup failed'), {
+        name: 'H5ConnectionRequiredError',
+        serverUrl: 'https://remote.example.com',
+      }),
+    )
+
+    render(<AppShell />)
+
+    expect(await screen.findByText('app.serverFailed')).toBeInTheDocument()
+    expect(screen.queryByText('h5 connection view')).not.toBeInTheDocument()
   })
 })

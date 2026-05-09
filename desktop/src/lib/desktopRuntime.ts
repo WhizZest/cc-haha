@@ -1,28 +1,115 @@
-import { getDefaultBaseUrl, setBaseUrl } from '../api/client'
+import { api, getDefaultBaseUrl, setAuthToken, setBaseUrl } from '../api/client'
+
+export const H5_SERVER_URL_STORAGE_KEY = 'cc-haha-h5-server-url'
+export const H5_TOKEN_STORAGE_KEY = 'cc-haha-h5-token'
+
+type H5ConnectionFailureReason = 'missing-token' | 'invalid-token' | 'verify-failed'
+
+export type StoredH5Connection = {
+  serverUrl: string | null
+  token: string | null
+}
+
+export class H5ConnectionRequiredError extends Error {
+  readonly serverUrl: string
+  readonly reason: H5ConnectionFailureReason
+
+  constructor(message: string, serverUrl: string, reason: H5ConnectionFailureReason) {
+    super(message)
+    this.name = 'H5ConnectionRequiredError'
+    this.serverUrl = serverUrl
+    this.reason = reason
+  }
+}
 
 export function isTauriRuntime() {
   if (typeof window === 'undefined') return false
   return '__TAURI_INTERNALS__' in window || '__TAURI__' in window
 }
 
+export function isBrowserH5Runtime() {
+  return typeof window !== 'undefined' && !isTauriRuntime()
+}
+
+export function readStoredH5Connection(): StoredH5Connection {
+  if (typeof window === 'undefined') {
+    return { serverUrl: null, token: null }
+  }
+
+  try {
+    return {
+      serverUrl: normalizeServerUrl(window.localStorage.getItem(H5_SERVER_URL_STORAGE_KEY)),
+      token: normalizeToken(window.localStorage.getItem(H5_TOKEN_STORAGE_KEY)),
+    }
+  } catch {
+    return { serverUrl: null, token: null }
+  }
+}
+
+export function clearStoredH5Connection() {
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.removeItem(H5_SERVER_URL_STORAGE_KEY)
+      window.localStorage.removeItem(H5_TOKEN_STORAGE_KEY)
+    } catch {
+      // Ignore storage failures
+    }
+  }
+
+  setAuthToken(null)
+}
+
+export async function saveAndVerifyH5Connection(serverUrl: string, token: string) {
+  const normalizedServerUrl = normalizeServerUrl(serverUrl)
+  const normalizedToken = normalizeToken(token)
+
+  if (!normalizedServerUrl) {
+    throw new Error('Enter a valid server URL.')
+  }
+
+  if (!normalizedToken) {
+    throw new Error('Enter your H5 access token.')
+  }
+
+  setBaseUrl(normalizedServerUrl)
+  setAuthToken(normalizedToken)
+
+  try {
+    await waitForHealth(normalizedServerUrl)
+    await verifyH5Access()
+  } catch (error) {
+    setAuthToken(null)
+    throw normalizeH5VerificationError(error, normalizedServerUrl)
+  }
+
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(H5_SERVER_URL_STORAGE_KEY, normalizedServerUrl)
+      window.localStorage.setItem(H5_TOKEN_STORAGE_KEY, normalizedToken)
+    } catch {
+      // Ignore storage failures after a successful verification.
+    }
+  }
+
+  return normalizedServerUrl
+}
+
+export function isH5ConnectionRequiredError(error: unknown): error is H5ConnectionRequiredError {
+  return error instanceof H5ConnectionRequiredError
+}
+
 export async function initializeDesktopServerUrl() {
   const fallbackUrl = getDefaultBaseUrl()
-  const queryUrl =
-    typeof window !== 'undefined'
-      ? new URLSearchParams(window.location.search).get('serverUrl')
-      : null
-  const requestedUrl = queryUrl?.trim() || fallbackUrl
 
   if (!isTauriRuntime()) {
-    setBaseUrl(requestedUrl)
-    await waitForHealth(requestedUrl)
-    return requestedUrl
+    return initializeBrowserServerUrl(fallbackUrl)
   }
 
   try {
     const { invoke } = await import('@tauri-apps/api/core')
     const serverUrl = await invoke<string>('get_server_url')
     setBaseUrl(serverUrl)
+    setAuthToken(null)
     await waitForHealth(serverUrl)
     return serverUrl
   } catch (error) {
@@ -31,6 +118,42 @@ export async function initializeDesktopServerUrl() {
     console.error('[desktop] Failed to initialize desktop server URL', error)
     throw new Error(message || `desktop server startup failed (fallback would be ${fallbackUrl})`)
   }
+}
+
+async function initializeBrowserServerUrl(fallbackUrl: string) {
+  const queryUrl =
+    typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('serverUrl')
+      : null
+  const stored = readStoredH5Connection()
+  const requestedUrl = normalizeServerUrl(queryUrl) ?? stored.serverUrl ?? fallbackUrl
+  const token = stored.token
+
+  setBaseUrl(requestedUrl)
+  setAuthToken(token)
+  await waitForHealth(requestedUrl)
+
+  if (!requiresH5Auth(requestedUrl)) {
+    return requestedUrl
+  }
+
+  if (!token) {
+    clearStoredH5Connection()
+    throw new H5ConnectionRequiredError(
+      'Enter your H5 token to continue.',
+      requestedUrl,
+      'missing-token',
+    )
+  }
+
+  try {
+    await verifyH5Access()
+  } catch (error) {
+    clearStoredH5Connection()
+    throw normalizeH5VerificationError(error, requestedUrl)
+  }
+
+  return requestedUrl
 }
 
 async function waitForHealth(serverUrl: string) {
@@ -54,7 +177,55 @@ async function waitForHealth(serverUrl: string) {
 
   throw new Error(
     lastError instanceof Error
-      ? `Local server healthcheck failed: ${lastError.message}`
-      : 'Local server healthcheck failed',
+      ? `Server healthcheck failed: ${lastError.message}`
+      : 'Server healthcheck failed',
+  )
+}
+
+async function verifyH5Access() {
+  await api.post<{ ok: true }>('/api/h5-access/verify')
+}
+
+function normalizeServerUrl(value: string | null | undefined) {
+  const trimmed = value?.trim()
+  if (!trimmed) return null
+
+  try {
+    return new URL(trimmed).toString().replace(/\/$/, '')
+  } catch {
+    return null
+  }
+}
+
+function normalizeToken(value: string | null | undefined) {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : null
+}
+
+function requiresH5Auth(serverUrl: string) {
+  try {
+    const hostname = new URL(serverUrl).hostname
+    return hostname !== '127.0.0.1' && hostname !== 'localhost' && hostname !== '::1'
+  } catch {
+    return false
+  }
+}
+
+function normalizeH5VerificationError(error: unknown, serverUrl: string) {
+  if (error instanceof H5ConnectionRequiredError) {
+    return error
+  }
+
+  if (error instanceof Error && error.message.startsWith('Server healthcheck failed')) {
+    return new Error(`Unable to reach ${serverUrl}. Check the server URL or network access.`)
+  }
+
+  const message =
+    error instanceof Error ? error.message : 'Unable to verify the H5 access token.'
+  const unauthorized = message.includes('401') || message.toLowerCase().includes('unauthorized')
+  return new H5ConnectionRequiredError(
+    unauthorized ? 'The saved H5 token is no longer valid.' : 'Unable to verify the H5 access token.',
+    serverUrl,
+    unauthorized ? 'invalid-token' : 'verify-failed',
   )
 }

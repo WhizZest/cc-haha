@@ -6,24 +6,39 @@ import { UpdateChecker } from '../shared/UpdateChecker'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useUIStore, type SettingsTab } from '../../stores/uiStore'
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts'
-import { initializeDesktopServerUrl, isTauriRuntime } from '../../lib/desktopRuntime'
+import {
+  H5ConnectionRequiredError,
+  initializeDesktopServerUrl,
+  isH5ConnectionRequiredError,
+  isTauriRuntime,
+} from '../../lib/desktopRuntime'
 import { TabBar } from './TabBar'
 import { StartupErrorView } from './StartupErrorView'
 import { useTabStore, SETTINGS_TAB_ID } from '../../stores/tabStore'
 import { useChatStore } from '../../stores/chatStore'
 import { useTranslation } from '../../i18n'
+import { H5ConnectionView } from './H5ConnectionView'
 
 export function AppShell() {
   const fetchSettings = useSettingsStore((s) => s.fetchAll)
   const sidebarOpen = useUIStore((s) => s.sidebarOpen)
   const [ready, setReady] = useState(false)
   const [startupError, setStartupError] = useState<string | null>(null)
+  const [h5StartupError, setH5StartupError] = useState<H5ConnectionRequiredError | null>(null)
+  const [bootstrapNonce, setBootstrapNonce] = useState(0)
   const t = useTranslation()
+  const tauriRuntime = isTauriRuntime()
 
   useEffect(() => {
     let cancelled = false
 
     const bootstrap = async () => {
+      if (!cancelled) {
+        setReady(false)
+        setStartupError(null)
+        setH5StartupError(null)
+      }
+
       try {
         await initializeDesktopServerUrl()
         await fetchSettings()
@@ -43,7 +58,13 @@ export function AppShell() {
         })().catch(() => {})
       } catch (error) {
         if (!cancelled) {
-          setStartupError(error instanceof Error ? error.message : String(error))
+          if (!tauriRuntime && isH5ConnectionRequiredError(error)) {
+            setH5StartupError(error)
+            setStartupError(null)
+          } else {
+            setStartupError(error instanceof Error ? error.message : String(error))
+            setH5StartupError(null)
+          }
           setReady(false)
         }
       }
@@ -54,11 +75,11 @@ export function AppShell() {
     return () => {
       cancelled = true
     }
-  }, [fetchSettings])
+  }, [bootstrapNonce, fetchSettings, tauriRuntime])
 
   // Listen for macOS native menu navigation events (About / Settings)
   useEffect(() => {
-    if (!isTauriRuntime()) return
+    if (!tauriRuntime) return
     let unlisten: (() => void) | undefined
     import('@tauri-apps/api/event')
       .then(({ listen }) =>
@@ -76,6 +97,16 @@ export function AppShell() {
   }, [])
 
   useKeyboardShortcuts()
+
+  if (!tauriRuntime && h5StartupError) {
+    return (
+      <H5ConnectionView
+        initialServerUrl={h5StartupError.serverUrl}
+        error={h5StartupError.message}
+        onConnected={() => setBootstrapNonce((value) => value + 1)}
+      />
+    )
+  }
 
   if (startupError) {
     return <StartupErrorView error={startupError} />
