@@ -44,6 +44,10 @@ export function getDefaultBaseUrl() {
   return DEFAULT_BASE_URL
 }
 
+export function hasExplicitDefaultBaseUrl() {
+  return Boolean(ENV_BASE_URL)
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,

@@ -1,4 +1,10 @@
-import { api, getDefaultBaseUrl, setAuthToken, setBaseUrl } from '../api/client'
+import {
+  api,
+  getDefaultBaseUrl,
+  hasExplicitDefaultBaseUrl,
+  setAuthToken,
+  setBaseUrl,
+} from '../api/client'
 
 export const H5_SERVER_URL_STORAGE_KEY = 'cc-haha-h5-server-url'
 export const H5_TOKEN_STORAGE_KEY = 'cc-haha-h5-token'
@@ -133,7 +139,7 @@ async function initializeBrowserServerUrl(fallbackUrl: string) {
   const requestedUrl =
     normalizeServerUrl(queryUrl) ??
     stored.serverUrl ??
-    getSameOriginServerUrl() ??
+    getConfiguredBrowserServerUrl(fallbackUrl) ??
     fallbackUrl
   const token = stored.token
   const browserH5Runtime = requiresH5AuthForServerUrl(requestedUrl)
@@ -247,6 +253,14 @@ function getSameOriginServerUrl() {
   }
 
   return normalizeServerUrl(window.location.origin)
+}
+
+function getConfiguredBrowserServerUrl(fallbackUrl: string) {
+  if (hasExplicitDefaultBaseUrl()) {
+    return normalizeServerUrl(fallbackUrl)
+  }
+
+  return getSameOriginServerUrl()
 }
 
 export function isLoopbackHostname(hostname: string) {

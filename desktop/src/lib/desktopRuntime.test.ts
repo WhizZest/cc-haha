@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const clientMocks = vi.hoisted(() => ({
   defaultBaseUrl: 'http://127.0.0.1:3456',
+  explicitDefaultBaseUrl: false,
   setBaseUrl: vi.fn(),
   setAuthToken: vi.fn(),
   postVerify: vi.fn(),
@@ -12,6 +13,7 @@ vi.mock('../api/client', () => ({
     post: clientMocks.postVerify,
   },
   getDefaultBaseUrl: () => clientMocks.defaultBaseUrl,
+  hasExplicitDefaultBaseUrl: () => clientMocks.explicitDefaultBaseUrl,
   setAuthToken: clientMocks.setAuthToken,
   setBaseUrl: clientMocks.setBaseUrl,
 }))
@@ -31,6 +33,8 @@ describe('desktopRuntime browser H5 bootstrap', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    clientMocks.defaultBaseUrl = 'http://127.0.0.1:3456'
+    clientMocks.explicitDefaultBaseUrl = false
     vi.useRealTimers()
     window.localStorage.clear()
     window.history.pushState({}, '', '/')
@@ -107,6 +111,26 @@ describe('desktopRuntime browser H5 bootstrap', () => {
       cache: 'no-store',
     })
     expect(globalThis.fetch).toHaveBeenCalledWith(`${window.location.origin}/api/status`, {
+      cache: 'no-store',
+    })
+  })
+
+  it('prefers an explicit Vite desktop server URL over the dev server origin', async () => {
+    clientMocks.defaultBaseUrl = 'http://127.0.0.1:55189'
+    clientMocks.explicitDefaultBaseUrl = true
+    window.history.pushState({}, '', '/')
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(null, { status: 200 }),
+    ) as typeof fetch
+
+    await expect(initializeDesktopServerUrl()).resolves.toBe('http://127.0.0.1:55189')
+
+    expect(clientMocks.setBaseUrl).toHaveBeenLastCalledWith('http://127.0.0.1:55189')
+    expect(clientMocks.setAuthToken).toHaveBeenLastCalledWith(null)
+    expect(globalThis.fetch).toHaveBeenCalledWith('http://127.0.0.1:55189/health', {
+      cache: 'no-store',
+    })
+    expect(globalThis.fetch).toHaveBeenCalledWith('http://127.0.0.1:55189/api/status', {
       cache: 'no-store',
     })
   })
