@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { H5AccessService } from '../services/h5AccessService.js'
+import {
+  H5AccessService,
+  resolveEffectiveH5PublicBaseUrl,
+} from '../services/h5AccessService.js'
 import { ProviderService } from '../services/providerService.js'
 
 let tmpDir: string
@@ -83,6 +86,41 @@ describe('H5AccessService', () => {
     const result = await service.enable()
 
     expect(result.settings.publicBaseUrl).toBe('http://192.168.1.20:28670')
+  })
+
+  test('configured public URL overrides stale stored local URLs', async () => {
+    const service = new H5AccessService()
+    await service.updateSettings({
+      publicBaseUrl: 'http://192.168.0.102:5179',
+    })
+
+    process.env.CLAUDE_H5_PUBLIC_BASE_URL = 'https://chat.example.com/app/'
+    const result = await service.enable()
+
+    expect(result.settings.publicBaseUrl).toBe('https://chat.example.com/app')
+  })
+
+  test('auto LAN mode replaces stale local public URLs but keeps public reverse proxies', () => {
+    expect(resolveEffectiveH5PublicBaseUrl({
+      enabled: true,
+      storedPublicBaseUrl: 'http://192.168.0.102:5179',
+      configuredPublicBaseUrl: null,
+      autoPublicBaseUrl: 'http://192.168.0.102:39876',
+    })).toBe('http://192.168.0.102:39876')
+
+    expect(resolveEffectiveH5PublicBaseUrl({
+      enabled: true,
+      storedPublicBaseUrl: 'http://127.0.0.1:5179',
+      configuredPublicBaseUrl: null,
+      autoPublicBaseUrl: 'http://192.168.0.102:39876',
+    })).toBe('http://192.168.0.102:39876')
+
+    expect(resolveEffectiveH5PublicBaseUrl({
+      enabled: true,
+      storedPublicBaseUrl: 'https://chat.example.com/app',
+      configuredPublicBaseUrl: null,
+      autoPublicBaseUrl: 'http://192.168.0.102:39876',
+    })).toBe('https://chat.example.com/app')
   })
 
   test('regenerateToken invalidates the previous token', async () => {

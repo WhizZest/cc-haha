@@ -39,7 +39,12 @@ function toPublicSettings(settings: StoredH5AccessSettings): H5AccessSettings {
     enabled: settings.enabled,
     tokenPreview: settings.tokenPreview,
     allowedOrigins: settings.allowedOrigins,
-    publicBaseUrl: settings.publicBaseUrl ?? (settings.enabled ? resolveAutoPublicBaseUrl() : null),
+    publicBaseUrl: resolveEffectiveH5PublicBaseUrl({
+      enabled: settings.enabled,
+      storedPublicBaseUrl: settings.publicBaseUrl,
+      configuredPublicBaseUrl: resolveConfiguredPublicBaseUrl(),
+      autoPublicBaseUrl: resolveAutoLanPublicBaseUrl(),
+    }),
   }
 }
 
@@ -121,7 +126,7 @@ function normalizePublicBaseUrl(input: unknown): string | null {
   return `${parsed.origin}${normalizedPath === '/' ? '' : normalizedPath}`
 }
 
-function resolveAutoPublicBaseUrl(): string | null {
+function resolveConfiguredPublicBaseUrl(): string | null {
   const configured = process.env.CLAUDE_H5_PUBLIC_BASE_URL
   if (configured) {
     try {
@@ -131,6 +136,10 @@ function resolveAutoPublicBaseUrl(): string | null {
     }
   }
 
+  return null
+}
+
+function resolveAutoLanPublicBaseUrl(): string | null {
   if (process.env.CLAUDE_H5_AUTO_PUBLIC_URL !== '1') {
     return null
   }
@@ -141,6 +150,60 @@ function resolveAutoPublicBaseUrl(): string | null {
   }
 
   return `http://${host}:${ProviderService.getServerPort()}`
+}
+
+export function resolveEffectiveH5PublicBaseUrl({
+  enabled,
+  storedPublicBaseUrl,
+  configuredPublicBaseUrl,
+  autoPublicBaseUrl,
+}: {
+  enabled: boolean
+  storedPublicBaseUrl: string | null
+  configuredPublicBaseUrl: string | null
+  autoPublicBaseUrl: string | null
+}): string | null {
+  if (!enabled) {
+    return storedPublicBaseUrl
+  }
+
+  if (configuredPublicBaseUrl) {
+    return configuredPublicBaseUrl
+  }
+
+  if (!autoPublicBaseUrl) {
+    return storedPublicBaseUrl
+  }
+
+  if (!storedPublicBaseUrl || isLocalOrPrivatePublicBaseUrl(storedPublicBaseUrl)) {
+    return autoPublicBaseUrl
+  }
+
+  return storedPublicBaseUrl
+}
+
+function isLocalOrPrivatePublicBaseUrl(value: string): boolean {
+  try {
+    const hostname = new URL(value).hostname
+      .trim()
+      .replace(/^\[/, '')
+      .replace(/\]$/, '')
+      .toLowerCase()
+    return isLocalOrPrivateHost(hostname)
+  } catch {
+    return false
+  }
+}
+
+function isLocalOrPrivateHost(hostname: string): boolean {
+  return hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '::1' ||
+    hostname === '0.0.0.0' ||
+    isPrivateIPv4(hostname) ||
+    hostname.startsWith('fc') ||
+    hostname.startsWith('fd') ||
+    hostname.startsWith('fe80:')
 }
 
 function findPrivateLanAddress(): string | null {
