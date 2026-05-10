@@ -462,6 +462,10 @@ describe('ChatInput file mentions', () => {
     expect(screen.getByRole('button', { name: 'Open composer tools' })).toHaveClass('h-11', 'w-11')
     expect(screen.getByRole('button', { name: 'Run' })).toHaveClass('h-11', 'w-11')
     expect(screen.queryByText('Run')).not.toBeInTheDocument()
+    expect(screen.getByTestId('chat-input-shell')).toHaveClass('px-3')
+    expect(screen.getByTestId('chat-input-shell').className).toContain('safe-area-inset-bottom')
+    expect(screen.getByTestId('chat-input-panel')).toHaveClass('rounded-2xl')
+    expect(screen.getByTestId('chat-input-panel')).not.toHaveClass('rounded-b-none')
 
     fireEvent.change(screen.getByRole('textbox'), {
       target: { value: '@cond', selectionStart: 5 },

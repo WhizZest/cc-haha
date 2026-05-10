@@ -16,6 +16,7 @@ import { TabBar } from './TabBar'
 import { StartupErrorView } from './StartupErrorView'
 import { useTabStore, SETTINGS_TAB_ID } from '../../stores/tabStore'
 import { useChatStore } from '../../stores/chatStore'
+import { useSessionStore } from '../../stores/sessionStore'
 import { useTranslation } from '../../i18n'
 import { H5ConnectionView } from './H5ConnectionView'
 import { useMobileViewport } from '../../hooks/useMobileViewport'
@@ -41,8 +42,22 @@ export function AppShell() {
   const tabs = useTabStore((s) => s.tabs)
   const activeTabId = useTabStore((s) => s.activeTabId)
   const setActiveTab = useTabStore((s) => s.setActiveTab)
+  const activeSession = useSessionStore((s) =>
+    activeTabId ? s.sessions.find((session) => session.id === activeTabId) ?? null : null,
+  )
   const wasMobileShellRef = useRef(false)
   const effectiveSidebarOpen = isMobileShell ? mobileSidebarOpen : sidebarOpen
+  const activeTab = tabs.find((tab) => tab.sessionId === activeTabId)
+  const isActiveChatTab = isChatTab(activeTab)
+  const mobileSessionTitle = activeSession?.title || activeTab?.title || t('session.untitled')
+  const mobileSessionUpdated = (() => {
+    if (!activeSession?.modifiedAt) return ''
+    const diff = Date.now() - new Date(activeSession.modifiedAt).getTime()
+    if (diff < 60000) return t('session.timeJustNow')
+    if (diff < 3600000) return t('session.timeMinutes', { n: Math.floor(diff / 60000) })
+    if (diff < 86400000) return t('session.timeHours', { n: Math.floor(diff / 3600000) })
+    return t('session.timeDays', { n: Math.floor(diff / 86400000) })
+  })()
   const sidebarHiddenProps: HTMLAttributes<HTMLDivElement> & { inert?: '' } =
     isMobileShell && !effectiveSidebarOpen
       ? { 'aria-hidden': true, inert: '' }
@@ -130,7 +145,6 @@ export function AppShell() {
 
   useEffect(() => {
     if (!ready || !isMobileShell) return
-    const activeTab = tabs.find((tab) => tab.sessionId === activeTabId)
     if (isChatTab(activeTab) || (!activeTab && !activeTabId)) return
     const nextChatTab = tabs.find(isChatTab)
     if (nextChatTab) {
@@ -138,7 +152,7 @@ export function AppShell() {
       return
     }
     useTabStore.setState({ activeTabId: null })
-  }, [activeTabId, isMobileShell, ready, setActiveTab, tabs])
+  }, [activeTab, activeTabId, isMobileShell, ready, setActiveTab, tabs])
 
   const setEffectiveSidebarOpen = (open: boolean) => {
     if (isMobileShell) {
@@ -208,7 +222,10 @@ export function AppShell() {
         className={`min-w-0 flex-1 flex flex-col overflow-hidden${isMobileShell ? ' app-shell-main--mobile' : ''}`}
       >
         {isMobileShell ? (
-          <div className="flex shrink-0 items-center justify-start border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+          <div
+            data-testid="mobile-session-header"
+            className="flex shrink-0 items-center gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
+          >
             <button
               type="button"
               data-testid="mobile-sidebar-toggle"
@@ -216,12 +233,39 @@ export function AppShell() {
               aria-expanded={effectiveSidebarOpen}
               aria-label={effectiveSidebarOpen ? t('sidebar.collapse') : t('sidebar.expand')}
               onClick={toggleEffectiveSidebar}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-container-low)] text-[var(--color-text-primary)] transition-colors hover:bg-[var(--color-surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-border-focus)]"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-[var(--color-text-primary)] transition-colors hover:bg-[var(--color-surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-border-focus)]"
             >
               <span className="material-symbols-outlined text-[20px]">
                 {effectiveSidebarOpen ? 'close' : 'menu'}
               </span>
             </button>
+            {isActiveChatTab ? (
+              <div className="min-w-0 flex-1">
+                <h1 className="truncate text-[15px] font-bold leading-tight text-[var(--color-text-primary)]">
+                  {mobileSessionTitle}
+                </h1>
+                <div className="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[10px] font-medium text-[var(--color-text-tertiary)]">
+                  {activeTab?.status === 'running' ? (
+                    <span className="flex shrink-0 items-center gap-1 text-[var(--color-text-secondary)]">
+                      <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-success)] animate-pulse-dot" />
+                      {t('session.active')}
+                    </span>
+                  ) : null}
+                  {activeSession?.messageCount !== undefined && activeSession.messageCount > 0 ? (
+                    <>
+                      {activeTab?.status === 'running' ? <span aria-hidden="true">·</span> : null}
+                      <span>{t('session.messages', { count: activeSession.messageCount })}</span>
+                    </>
+                  ) : null}
+                  {mobileSessionUpdated ? (
+                    <>
+                      {(activeTab?.status === 'running') || ((activeSession?.messageCount ?? 0) > 0) ? <span aria-hidden="true">·</span> : null}
+                      <span className="truncate">{t('session.lastUpdated', { time: mobileSessionUpdated })}</span>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
         {!isMobileShell ? <TabBar /> : null}

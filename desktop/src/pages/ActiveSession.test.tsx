@@ -509,6 +509,7 @@ describe('ActiveSession task polling', () => {
     expect(screen.getByTestId('active-session-chat-column')).toHaveClass('min-w-0')
     expect(screen.getByTestId('message-list')).toHaveAttribute('data-compact', 'false')
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-compact', 'false')
+    expect(screen.queryByRole('heading', { name: 'Mobile Session' })).not.toBeInTheDocument()
     expect(screen.queryByTestId('workspace-panel')).not.toBeInTheDocument()
     expect(screen.queryByTestId('workspace-resize-handle')).not.toBeInTheDocument()
     expect(screen.queryByTestId('session-terminal-panel')).not.toBeInTheDocument()

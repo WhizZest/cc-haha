@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useUIStore } from '../../stores/uiStore'
+import { useSessionStore } from '../../stores/sessionStore'
 
 const mocks = vi.hoisted(() => ({
   initializeDesktopServerUrl: vi.fn(),
@@ -120,6 +121,7 @@ describe('AppShell boot flow', () => {
     })
     mocks.tabState.activeTabId = null
     mocks.tabState.tabs = []
+    useSessionStore.setState({ sessions: [], activeSessionId: null, isLoading: false, error: null })
     useUIStore.setState({ sidebarOpen: true })
   })
 
@@ -269,6 +271,39 @@ describe('AppShell boot flow', () => {
 
     expect(useUIStore.getState().sidebarOpen).toBe(false)
     expect(screen.getByTestId('sidebar-shell')).toHaveAttribute('data-state', 'closed')
+  })
+
+  it('shares the mobile drawer row with the active session title', async () => {
+    mocks.isMobile = true
+    mocks.tabState.activeTabId = 'session-mobile'
+    mocks.tabState.tabs = [
+      { sessionId: 'session-mobile', title: 'Fallback tab title', type: 'session', status: 'running' },
+    ]
+    useSessionStore.setState({
+      sessions: [{
+        id: 'session-mobile',
+        title: 'Analyze recent commits',
+        createdAt: '2026-05-10T00:00:00.000Z',
+        modifiedAt: new Date().toISOString(),
+        messageCount: 7,
+        projectPath: '/tmp/project',
+        workDir: '/tmp/project',
+        workDirExists: true,
+      }],
+      activeSessionId: 'session-mobile',
+      isLoading: false,
+      error: null,
+    })
+
+    render(<AppShell />)
+
+    await screen.findByText('content loaded')
+
+    const header = screen.getByTestId('mobile-session-header')
+    expect(header).toHaveTextContent('Analyze recent commits')
+    expect(header).toHaveTextContent('session.active')
+    expect(header).toHaveTextContent('session.messages')
+    expect(screen.getByTestId('mobile-sidebar-toggle')).toHaveClass('h-10', 'w-10')
   })
 
   it('keeps browser H5 mobile on chat tabs when settings was restored as active', async () => {

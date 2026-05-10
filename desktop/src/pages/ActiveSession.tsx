@@ -358,12 +358,12 @@ export function ActiveSession() {
             </div>
           ) : (
             <>
-              {!isMemberSession && (
+              {!isMemberSession && !isMobileLayout && (
                 <div
                   className={
                     showWorkspacePanel
                       ? 'flex w-full items-center border-b border-[var(--color-border)]/70 px-4 py-3'
-                      : `mx-auto flex w-full max-w-[860px] items-center border-b border-outline-variant/10 ${isMobileLayout ? 'px-4 py-3' : 'px-8 py-3'}`
+                      : 'mx-auto flex w-full max-w-[860px] items-center border-b border-outline-variant/10 px-8 py-3'
                   }
                 >
                   <div className="min-w-0 flex-1">

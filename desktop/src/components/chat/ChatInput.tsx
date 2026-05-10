@@ -721,12 +721,13 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
 
   return (
     <div
+      data-testid="chat-input-shell"
       className={
         isHeroComposer
           ? `bg-[var(--color-surface)] ${isMobileComposer ? 'px-4 pb-3' : 'px-8 pb-4'}`
           : compact
-            ? `border-t border-[var(--color-border)]/70 bg-[var(--color-surface)] ${isMobileComposer ? 'px-0 pb-0 pt-2' : 'px-3 py-3'}`
-            : `bg-[var(--color-surface)] ${isMobileComposer ? 'px-0 pb-0 pt-2' : 'px-4 py-4'}`
+            ? `border-t border-[var(--color-border)]/70 bg-[var(--color-surface)] ${isMobileComposer ? 'px-3 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-2' : 'px-3 py-3'}`
+            : `bg-[var(--color-surface)] ${isMobileComposer ? 'px-3 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-2' : 'px-4 py-4'}`
       }
     >
       <div
@@ -739,11 +740,12 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
         }
       >
         <div
+          data-testid="chat-input-panel"
           className={isHeroComposer
             ? 'glass-panel relative flex flex-col gap-3 rounded-t-xl rounded-b-none p-4 transition-colors'
             : compact
-              ? `glass-panel relative p-3 transition-colors ${isMobileComposer ? 'rounded-t-2xl rounded-b-none shadow-[0_-12px_36px_rgba(54,35,28,0.12)]' : 'rounded-xl'}`
-              : `glass-panel relative transition-colors ${isMobileComposer ? 'rounded-t-2xl rounded-b-none p-3 shadow-[0_-12px_36px_rgba(54,35,28,0.12)]' : 'rounded-xl p-4'}`}
+              ? `glass-panel relative p-3 transition-colors ${isMobileComposer ? 'rounded-2xl shadow-[0_-12px_36px_rgba(54,35,28,0.12)]' : 'rounded-xl'}`
+              : `glass-panel relative transition-colors ${isMobileComposer ? 'rounded-2xl p-3 shadow-[0_-12px_36px_rgba(54,35,28,0.12)]' : 'rounded-xl p-4'}`}
           onDragOver={(event) => event.preventDefault()}
           onDrop={handleDrop}
         >
