@@ -11,6 +11,14 @@ import type { PerSessionState } from '../../stores/chatStore'
 
 const ACTIVE_TAB = 'active-tab'
 
+async function waitForProgrammaticScrollReset() {
+  await act(async () => {
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve())
+    })
+  })
+}
+
 function makeSessionState(overrides: Partial<PerSessionState> = {}): PerSessionState {
   return {
     messages: [],
@@ -459,6 +467,7 @@ describe('MessageList nested tool calls', () => {
     })
 
     scrollIntoView.mockClear()
+    await waitForProgrammaticScrollReset()
     fireEvent.scroll(scroller)
 
     act(() => {
@@ -517,6 +526,7 @@ describe('MessageList nested tool calls', () => {
     })
 
     scrollIntoView.mockClear()
+    await waitForProgrammaticScrollReset()
     fireEvent.scroll(scroller)
 
     act(() => {
@@ -581,6 +591,7 @@ describe('MessageList nested tool calls', () => {
       },
     })
 
+    await waitForProgrammaticScrollReset()
     fireEvent.scroll(scroller)
     expect(screen.getByRole('button', { name: 'Latest' })).toBeTruthy()
 
@@ -592,6 +603,7 @@ describe('MessageList nested tool calls', () => {
     })
 
     scrollTop = 760
+    await waitForProgrammaticScrollReset()
     fireEvent.scroll(scroller)
 
     act(() => {
@@ -697,6 +709,7 @@ describe('MessageList nested tool calls', () => {
     })
 
     scrollIntoView.mockClear()
+    await waitForProgrammaticScrollReset()
     fireEvent.scroll(scroller)
     fireEvent.click(screen.getByRole('button', { name: 'Latest' }))
 
