@@ -52,16 +52,16 @@ describe('desktopRuntime browser H5 bootstrap', () => {
     expect(requiresH5AuthForServerUrl('http://[::1]:3456')).toBe(false)
     expect(requiresH5AuthForServerUrl('http://127.0.0.1:3456')).toBe(false)
     expect(requiresH5AuthForServerUrl('http://localhost:3456')).toBe(false)
-    expect(requiresH5AuthForServerUrl('https://public.example.com/app')).toBe(true)
-    expect(requiresH5AuthForServerUrl('https://public.example.com/app', 'phone.example.test')).toBe(true)
+    expect(requiresH5AuthForServerUrl('https://public.example.com/app')).toBe(false)
+    expect(requiresH5AuthForServerUrl('https://public.example.com/app', 'phone.example.test')).toBe(false)
   })
 
-  it('only lets localhost browser WebUI bypass H5 auth for private LAN servers', () => {
+  it('does not require H5 auth for LAN or public browser URLs while token access is paused', () => {
     expect(requiresH5AuthForServerUrl('http://192.168.0.102:28670', '127.0.0.1')).toBe(false)
     expect(requiresH5AuthForServerUrl('http://10.0.0.5:28670', 'localhost')).toBe(false)
     expect(requiresH5AuthForServerUrl('http://172.20.1.8:28670', 'localhost')).toBe(false)
-    expect(requiresH5AuthForServerUrl('https://public.example.com/app', 'localhost')).toBe(true)
-    expect(requiresH5AuthForServerUrl('http://192.168.0.102:28670', 'phone.example.test')).toBe(true)
+    expect(requiresH5AuthForServerUrl('https://public.example.com/app', 'localhost')).toBe(false)
+    expect(requiresH5AuthForServerUrl('http://192.168.0.102:28670', 'phone.example.test')).toBe(false)
   })
 
   it('clears an invalid token but preserves the remembered remote server URL', async () => {
@@ -184,6 +184,23 @@ describe('desktopRuntime browser H5 bootstrap', () => {
     expect(clientMocks.postVerify).not.toHaveBeenCalled()
     expect(window.localStorage.getItem(H5_SERVER_URL_STORAGE_KEY)).toBeNull()
     expect(globalThis.fetch).toHaveBeenCalledWith('http://192.168.0.102:28670/api/status', {
+      cache: 'no-store',
+    })
+  })
+
+  it('lets browser H5 connect to a public server URL without H5 token', async () => {
+    window.history.pushState({}, '', '/?serverUrl=https%3A%2F%2Fpublic.example.com%2Fapp')
+    window.localStorage.setItem(H5_TOKEN_STORAGE_KEY, 'remote-token')
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(null, { status: 200 }),
+    ) as typeof fetch
+
+    await expect(initializeDesktopServerUrl()).resolves.toBe('https://public.example.com/app')
+
+    expect(clientMocks.setBaseUrl).toHaveBeenLastCalledWith('https://public.example.com/app')
+    expect(clientMocks.setAuthToken).toHaveBeenLastCalledWith(null)
+    expect(clientMocks.postVerify).not.toHaveBeenCalled()
+    expect(globalThis.fetch).toHaveBeenCalledWith('https://public.example.com/app/api/status', {
       cache: 'no-store',
     })
   })

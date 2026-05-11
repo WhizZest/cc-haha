@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { canBypassRemoteAuthForLocalBrowser, startServer } from '../index.js'
+import { startServer } from '../index.js'
 import { H5AccessService } from '../services/h5AccessService.js'
 import { ProviderService } from '../services/providerService.js'
 
@@ -14,6 +14,7 @@ let originalConfigDir: string | undefined
 let originalAnthropicApiKey: string | undefined
 let originalH5DistDir: string | undefined
 let originalClaudeAppRoot: string | undefined
+let originalServerAuthRequired: string | undefined
 let originalServerPort = 3456
 
 async function waitForServer(url: string): Promise<void> {
@@ -35,12 +36,24 @@ function randomPort(): number {
   return 18000 + Math.floor(Math.random() * 10000)
 }
 
-async function startRemoteServer(): Promise<void> {
+async function startRemoteServer(options: { authRequired?: boolean } = {}): Promise<void> {
+  if (options.authRequired) {
+    process.env.SERVER_AUTH_REQUIRED = '1'
+  } else {
+    delete process.env.SERVER_AUTH_REQUIRED
+  }
+
   const port = randomPort()
   server = startServer(port, '0.0.0.0')
   baseUrl = `http://127.0.0.1:${port}`
   wsBaseUrl = `ws://127.0.0.1:${port}`
   await waitForServer(`${baseUrl}/health`)
+}
+
+async function restartRemoteServer(options: { authRequired?: boolean } = {}): Promise<void> {
+  server?.stop(true)
+  server = undefined
+  await startRemoteServer(options)
 }
 
 function makeUpgradeHeaders(origin?: string): HeadersInit {
@@ -92,6 +105,7 @@ beforeEach(async () => {
   originalAnthropicApiKey = process.env.ANTHROPIC_API_KEY
   originalH5DistDir = process.env.CLAUDE_H5_DIST_DIR
   originalClaudeAppRoot = process.env.CLAUDE_APP_ROOT
+  originalServerAuthRequired = process.env.SERVER_AUTH_REQUIRED
   originalServerPort = ProviderService.getServerPort()
   process.env.CLAUDE_CONFIG_DIR = tmpDir
   const h5DistDir = path.join(tmpDir, 'dist')
@@ -121,6 +135,8 @@ afterEach(async () => {
   else process.env.CLAUDE_H5_DIST_DIR = originalH5DistDir
   if (originalClaudeAppRoot === undefined) delete process.env.CLAUDE_APP_ROOT
   else process.env.CLAUDE_APP_ROOT = originalClaudeAppRoot
+  if (originalServerAuthRequired === undefined) delete process.env.SERVER_AUTH_REQUIRED
+  else process.env.SERVER_AUTH_REQUIRED = originalServerAuthRequired
 
   await fs.rm(tmpDir, { recursive: true, force: true })
 })
@@ -153,12 +169,12 @@ describe('remote H5 auth and CORS integration', () => {
     await expect(response.text()).resolves.toContain('Mapped H5 Shell')
   })
 
-  test('rejects /api/status when H5 is disabled and no Anthropic key exists', async () => {
+  test('allows /api/status by default without H5 token or Anthropic key', async () => {
     const response = await fetch(`${baseUrl}/api/status`)
 
-    expect(response.status).toBe(401)
+    expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({
-      error: 'Unauthorized',
+      status: 'ok',
     })
   })
 
@@ -190,21 +206,7 @@ describe('remote H5 auth and CORS integration', () => {
     })
   })
 
-  test('only lets localhost WebUI origin bypass H5 auth for loopback or private server hosts', () => {
-    expect(canBypassRemoteAuthForLocalBrowser('http://127.0.0.1:5179', '127.0.0.1')).toBe(true)
-    expect(canBypassRemoteAuthForLocalBrowser('http://localhost:5179', '192.168.0.102')).toBe(true)
-    expect(canBypassRemoteAuthForLocalBrowser('http://tauri.localhost', '127.0.0.1')).toBe(true)
-    expect(canBypassRemoteAuthForLocalBrowser('tauri://localhost', '127.0.0.1')).toBe(true)
-    expect(canBypassRemoteAuthForLocalBrowser('asset://localhost', '127.0.0.1')).toBe(true)
-    expect(canBypassRemoteAuthForLocalBrowser('http://localhost:5179', '10.0.0.5')).toBe(true)
-    expect(canBypassRemoteAuthForLocalBrowser('http://localhost:5179', '172.20.1.8')).toBe(true)
-    expect(canBypassRemoteAuthForLocalBrowser('http://localhost:5179', 'public.example.com')).toBe(false)
-    expect(canBypassRemoteAuthForLocalBrowser('http://tauri.localhost', 'public.example.com')).toBe(false)
-    expect(canBypassRemoteAuthForLocalBrowser('http://tauri.localhost', '192.168.0.102')).toBe(false)
-    expect(canBypassRemoteAuthForLocalBrowser('http://192.168.0.50:5179', '192.168.0.102')).toBe(false)
-  })
-
-  test('rejects /api/status when H5 is enabled and bearer token is wrong', async () => {
+  test('keeps /api/status open by default even when a stale bearer token is sent', async () => {
     await enableH5Access()
 
     const response = await fetch(`${baseUrl}/api/status`, {
@@ -213,10 +215,13 @@ describe('remote H5 auth and CORS integration', () => {
       },
     })
 
-    expect(response.status).toBe(401)
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      status: 'ok',
+    })
   })
 
-  test('allows /api/status when H5 is enabled and bearer token is correct', async () => {
+  test('allows /api/status with a bearer token while default auth is open', async () => {
     const token = await enableH5Access()
 
     const response = await fetch(`${baseUrl}/api/status`, {
@@ -231,7 +236,7 @@ describe('remote H5 auth and CORS integration', () => {
     })
   })
 
-  test('rejects unlisted CORS origins', async () => {
+  test('allows arbitrary CORS origins while default H5 access is open', async () => {
     const token = await enableH5Access({
       allowedOrigins: ['https://allowed.example.com'],
     })
@@ -245,8 +250,8 @@ describe('remote H5 auth and CORS integration', () => {
       },
     })
 
-    expect(response.status).toBe(403)
-    expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull()
+    expect(response.status).toBe(204)
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://blocked.example.com')
   })
 
   test('allows same-origin H5 browser requests without a separate origin allowlist entry', async () => {
@@ -284,8 +289,30 @@ describe('remote H5 auth and CORS integration', () => {
     expect(response.headers.get('Vary')).toBe('Origin')
   })
 
-  test('rejects websocket upgrade without a valid H5 token and accepts the correct token', async () => {
+  test('opens websocket upgrades without H5 token by default', async () => {
+    await expectWebSocketOpen(`${wsBaseUrl}/ws/h5-auth-test`)
+  })
+
+  test('honors explicit auth opt-in for REST and websocket requests', async () => {
+    await restartRemoteServer({ authRequired: true })
     const token = await enableH5Access()
+
+    const missingStatusResponse = await fetch(`${baseUrl}/api/status`)
+    expect(missingStatusResponse.status).toBe(401)
+
+    const wrongStatusResponse = await fetch(`${baseUrl}/api/status`, {
+      headers: {
+        Authorization: 'Bearer wrong-token',
+      },
+    })
+    expect(wrongStatusResponse.status).toBe(401)
+
+    const validStatusResponse = await fetch(`${baseUrl}/api/status`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+    expect(validStatusResponse.status).toBe(200)
 
     const missingTokenResponse = await fetch(`${baseUrl}/ws/h5-auth-test`, {
       headers: makeUpgradeHeaders(),

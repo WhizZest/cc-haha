@@ -13,8 +13,8 @@ describe('corsHeaders', () => {
     expect(corsHeaders('tauri://localhost')['Access-Control-Allow-Origin']).toBe('tauri://localhost')
   })
 
-  it('falls back for unknown origins', () => {
-    expect(corsHeaders('https://example.com')['Access-Control-Allow-Origin']).toBe('http://localhost:3000')
+  it('allows arbitrary origins while H5 access is open', () => {
+    expect(corsHeaders('https://example.com')['Access-Control-Allow-Origin']).toBe('https://example.com')
     expect(corsHeaders(null)['Access-Control-Allow-Origin']).toBe('http://localhost:3000')
   })
 })

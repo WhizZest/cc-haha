@@ -1,16 +1,9 @@
 /**
- * CORS middleware for local desktop app communication
+ * CORS middleware for desktop and temporary open H5 access.
  */
 
-import { H5AccessService } from '../services/h5AccessService.js'
-
-const ALLOWED_ORIGIN_RE =
-  /^(?:https?:\/\/(?:localhost|127\.0\.0\.1|tauri\.localhost)(?::\d+)?|tauri:\/\/localhost|asset:\/\/localhost)$/
-
 export function corsHeaders(origin?: string | null): Record<string, string> {
-  // Allow localhost origins (http/https) and Tauri WebView origins
-  const allowedOrigin =
-    origin && ALLOWED_ORIGIN_RE.test(origin) ? origin : 'http://localhost:3000'
+  const allowedOrigin = origin || 'http://localhost:3000'
   return {
     'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
@@ -37,7 +30,7 @@ export type CorsResolution = {
 
 export async function resolveCors(
   origin?: string | null,
-  requestOrigin?: string | null,
+  _requestOrigin?: string | null,
 ): Promise<CorsResolution> {
   if (!origin) {
     return {
@@ -47,40 +40,12 @@ export async function resolveCors(
     }
   }
 
-  if (ALLOWED_ORIGIN_RE.test(origin)) {
-    return {
-      allowed: true,
-      rejected: false,
-      headers: corsHeaders(origin),
-    }
-  }
-
-  if (requestOrigin && origin === requestOrigin) {
-    return {
-      allowed: true,
-      rejected: false,
-      headers: {
-        ...baseCorsHeaders(),
-        'Access-Control-Allow-Origin': origin,
-      },
-    }
-  }
-
-  const h5AccessService = new H5AccessService()
-  if (await h5AccessService.isOriginAllowed(origin)) {
-    return {
-      allowed: true,
-      rejected: false,
-      headers: {
-        ...baseCorsHeaders(),
-        'Access-Control-Allow-Origin': origin,
-      },
-    }
-  }
-
   return {
-    allowed: false,
-    rejected: true,
-    headers: baseCorsHeaders(),
+    allowed: true,
+    rejected: false,
+    headers: {
+      ...baseCorsHeaders(),
+      'Access-Control-Allow-Origin': origin,
+    },
   }
 }

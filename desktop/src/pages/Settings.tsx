@@ -5,7 +5,6 @@ import { useTranslation } from '../i18n'
 import { Modal } from '../components/shared/Modal'
 import { ConfirmDialog } from '../components/shared/ConfirmDialog'
 import { Input } from '../components/shared/Input'
-import { Textarea } from '../components/shared/Textarea'
 import { Button } from '../components/shared/Button'
 import { Dropdown } from '../components/shared/Dropdown'
 import type { PermissionMode, EffortLevel, ThemeMode, WebSearchMode } from '../types/settings'
@@ -47,8 +46,6 @@ import {
   stripProviderSettingsJsonEnv,
 } from '../lib/providerSettingsJson'
 import { copyTextToClipboard } from '../components/chat/clipboard'
-
-const H5_GENERATED_TOKEN_TIMEOUT_MS = 30_000
 
 export function Settings() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('providers')
@@ -1364,9 +1361,6 @@ function GeneralSettings() {
     setWebSearch,
     h5Access,
     h5AccessError,
-    enableH5Access,
-    disableH5Access,
-    regenerateH5AccessToken,
     updateH5AccessSettings,
     responseLanguage,
     setResponseLanguage,
@@ -1374,16 +1368,12 @@ function GeneralSettings() {
   const t = useTranslation()
   const [webSearchDraft, setWebSearchDraft] = useState(webSearch)
   const [h5PublicBaseUrlDraft, setH5PublicBaseUrlDraft] = useState(h5Access.publicBaseUrl ?? '')
-  const [h5AllowedOriginsDraft, setH5AllowedOriginsDraft] = useState(serializeAllowedOrigins(h5Access.allowedOrigins))
-  const [generatedH5Token, setGeneratedH5Token] = useState<string | null>(null)
   const [notificationPermission, setNotificationPermission] = useState<DesktopNotificationPermission>('default')
   const [notificationActionRunning, setNotificationActionRunning] = useState(false)
   const [h5ActionRunning, setH5ActionRunning] = useState(false)
   const webSearchDirty = JSON.stringify(webSearchDraft) !== JSON.stringify(webSearch)
-  const h5AccessUrl = h5Access.enabled && h5Access.publicBaseUrl ? h5Access.publicBaseUrl : null
-  const h5AccessDirty =
-    h5PublicBaseUrlDraft.trim() !== (h5Access.publicBaseUrl ?? '') ||
-    !arraysEqual(parseAllowedOriginsDraft(h5AllowedOriginsDraft), h5Access.allowedOrigins)
+  const h5AccessUrl = h5Access.publicBaseUrl
+  const h5AccessDirty = h5PublicBaseUrlDraft.trim() !== (h5Access.publicBaseUrl ?? '')
 
   useEffect(() => {
     setWebSearchDraft(webSearch)
@@ -1391,20 +1381,7 @@ function GeneralSettings() {
 
   useEffect(() => {
     setH5PublicBaseUrlDraft(h5Access.publicBaseUrl ?? '')
-    setH5AllowedOriginsDraft(serializeAllowedOrigins(h5Access.allowedOrigins))
   }, [h5Access])
-
-  useEffect(() => {
-    if (!generatedH5Token) return
-
-    const timeout = window.setTimeout(() => {
-      setGeneratedH5Token(null)
-    }, H5_GENERATED_TOKEN_TIMEOUT_MS)
-
-    return () => {
-      window.clearTimeout(timeout)
-    }
-  }, [generatedH5Token])
 
   useEffect(() => {
     let cancelled = false
@@ -1531,34 +1508,12 @@ function GeneralSettings() {
     }
   }
 
-  const handleH5AccessToggle = async (enabled: boolean) => {
-    await runH5Action(async () => {
-      if (enabled) {
-        const token = await enableH5Access()
-        setGeneratedH5Token(token)
-        return
-      }
-
-      setGeneratedH5Token(null)
-      await disableH5Access()
-    })
-  }
-
   const handleH5SettingsSave = async () => {
     await runH5Action(async () => {
       await updateH5AccessSettings({
         publicBaseUrl: h5PublicBaseUrlDraft.trim() || null,
-        allowedOrigins: parseAllowedOriginsDraft(h5AllowedOriginsDraft),
       })
     })
-  }
-
-  const handleGeneratedH5TokenCopy = async () => {
-    if (!generatedH5Token) return
-    const copied = await copyTextToClipboard(generatedH5Token)
-    if (copied) {
-      setGeneratedH5Token(null)
-    }
   }
 
   const handleH5UrlCopy = async () => {
@@ -1845,83 +1800,7 @@ function GeneralSettings() {
             {t('settings.general.h5AccessDescription')}
           </p>
           <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-container-low)] px-4 py-4">
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                aria-label={t('settings.general.h5AccessEnabled')}
-                checked={h5Access.enabled}
-                onChange={(event) => void handleH5AccessToggle(event.target.checked)}
-                disabled={h5ActionRunning}
-                className="peer sr-only"
-              />
-              <SettingsCheckboxMark checked={h5Access.enabled} disabled={h5ActionRunning} />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-[var(--color-text-primary)]">
-                  {t('settings.general.h5AccessEnabled')}
-                </div>
-                <div className="text-xs text-[var(--color-text-tertiary)] mt-1 leading-5">
-                  {t('settings.general.h5AccessEnabledHint')}
-                </div>
-              </div>
-            </label>
-
-            <div className="mt-4 border-t border-[var(--color-border)]/60 pt-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-xs uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">
-                    {t('settings.general.h5AccessTokenPreview')}
-                  </div>
-                  <div className="mt-1 text-sm font-medium text-[var(--color-text-primary)]">
-                    {h5Access.tokenPreview ?? t('settings.general.h5AccessDisabledValue')}
-                  </div>
-                </div>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => void runH5Action(async () => {
-                    const token = await regenerateH5AccessToken()
-                    setGeneratedH5Token(token)
-                  })}
-                  disabled={!h5Access.enabled || h5ActionRunning}
-                >
-                  {t('settings.general.h5AccessRegenerate')}
-                </Button>
-              </div>
-            </div>
-
-            {generatedH5Token && (
-              <div className="mt-4 border-t border-[var(--color-border)]/60 pt-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-sm font-medium text-[var(--color-text-primary)]">
-                    {t('settings.general.h5AccessGeneratedToken')}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => void handleGeneratedH5TokenCopy()}
-                    >
-                      {t('settings.general.h5AccessCopy')}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setGeneratedH5Token(null)}
-                    >
-                      {t('settings.general.h5AccessHideToken')}
-                    </Button>
-                  </div>
-                </div>
-                <code className="mt-2 block rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs text-[var(--color-text-primary)] break-all">
-                  {generatedH5Token}
-                </code>
-                <p className="mt-2 text-xs text-[var(--color-text-tertiary)]">
-                  {t('settings.general.h5AccessGeneratedTokenHint')}
-                </p>
-              </div>
-            )}
-
-            <div className="mt-4 grid grid-cols-1 gap-3 border-t border-[var(--color-border)]/60 pt-4">
+            <div className="grid grid-cols-1 gap-3">
               <Input
                 id="h5-access-public-url"
                 label={t('settings.general.h5AccessPublicUrl')}
@@ -1929,17 +1808,9 @@ function GeneralSettings() {
                 placeholder={t('settings.general.h5AccessPublicUrlPlaceholder')}
                 onChange={(event) => setH5PublicBaseUrlDraft(event.target.value)}
               />
-              <Textarea
-                id="h5-access-allowed-origins"
-                label={t('settings.general.h5AccessAllowedOrigins')}
-                value={h5AllowedOriginsDraft}
-                placeholder={t('settings.general.h5AccessAllowedOriginsPlaceholder')}
-                onChange={(event) => setH5AllowedOriginsDraft(event.target.value)}
-                className="min-h-[88px]"
-              />
               <div className="flex items-center justify-between gap-3">
                 <p className="text-xs text-[var(--color-text-tertiary)]">
-                  {t('settings.general.h5AccessOriginsHint')}
+                  {t('settings.general.h5AccessOpenHint')}
                 </p>
                 <Button
                   size="sm"
@@ -2007,21 +1878,6 @@ function SettingsCheckboxMark({ checked, disabled = false }: { checked: boolean;
       </span>
     </span>
   )
-}
-
-function serializeAllowedOrigins(origins: string[]) {
-  return origins.join(', ')
-}
-
-function parseAllowedOriginsDraft(value: string) {
-  return value
-    .split(/[\n,]/)
-    .map((origin) => origin.trim())
-    .filter(Boolean)
-}
-
-function arraysEqual(left: string[], right: string[]) {
-  return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
 // ─── Agents Settings ──────────────────────────────────────

@@ -269,46 +269,9 @@ export function isLoopbackHostname(hostname: string) {
 }
 
 export function requiresH5AuthForServerUrl(serverUrl: string, browserHostname = getBrowserHostname()) {
-  try {
-    const serverHostname = new URL(serverUrl).hostname
-    if (isLoopbackHostname(serverHostname)) {
-      return false
-    }
-    if (browserHostname && isLoopbackHostname(browserHostname) && isPrivateNetworkHostname(serverHostname)) {
-      return false
-    }
-    return true
-  } catch {
-    return false
-  }
-}
-
-function isPrivateNetworkHostname(hostname: string) {
-  const normalized = hostname.trim().replace(/^\[/, '').replace(/\]$/, '').toLowerCase()
-
-  if (normalized === '0.0.0.0') {
-    return true
-  }
-
-  const ipv4Parts = normalized.split('.')
-  if (ipv4Parts.length === 4 && ipv4Parts.every((part) => /^\d+$/.test(part))) {
-    const octets = ipv4Parts.map((part) => Number(part))
-    if (octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) {
-      return false
-    }
-    const a = octets[0] ?? -1
-    const b = octets[1] ?? -1
-    return (
-      a === 10 ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      (a === 169 && b === 254)
-    )
-  }
-
-  return normalized.startsWith('fc') ||
-    normalized.startsWith('fd') ||
-    normalized.startsWith('fe80:')
+  void serverUrl
+  void browserHostname
+  return false
 }
 
 function getBrowserHostname() {

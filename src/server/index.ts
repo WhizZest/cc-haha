@@ -50,69 +50,6 @@ const SERVER_OPTIONS = resolveServerOptions()
 const PORT = SERVER_OPTIONS.port
 const HOST = SERVER_OPTIONS.host
 
-function isLocalServerHost(host: string): boolean {
-  return host === '127.0.0.1' || host === 'localhost' || host === '::1'
-}
-
-function isLocalBrowserOrigin(origin: string | null): boolean {
-  if (!origin) return false
-
-  try {
-    return isLocalServerHost(new URL(origin).hostname)
-  } catch {
-    return false
-  }
-}
-
-function isTauriWebViewOrigin(origin: string | null): boolean {
-  if (!origin) return false
-
-  try {
-    const url = new URL(origin)
-    return url.hostname === 'tauri.localhost' ||
-      ((url.protocol === 'tauri:' || url.protocol === 'asset:') && url.hostname === 'localhost')
-  } catch {
-    return false
-  }
-}
-
-function isPrivateNetworkHost(host: string): boolean {
-  const normalized = host.trim().replace(/^\[/, '').replace(/\]$/, '').toLowerCase()
-
-  if (normalized === '0.0.0.0') {
-    return true
-  }
-
-  const parts = normalized.split('.')
-  if (parts.length === 4 && parts.every((part) => /^\d+$/.test(part))) {
-    const octets = parts.map((part) => Number(part))
-    if (octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) {
-      return false
-    }
-    const a = octets[0] ?? -1
-    const b = octets[1] ?? -1
-    return (
-      a === 10 ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      (a === 169 && b === 254)
-    )
-  }
-
-  return normalized.startsWith('fc') ||
-    normalized.startsWith('fd') ||
-    normalized.startsWith('fe80:')
-}
-
-export function canBypassRemoteAuthForLocalBrowser(origin: string | null, requestHost: string): boolean {
-  if (isTauriWebViewOrigin(origin)) {
-    return isLocalServerHost(requestHost)
-  }
-
-  return isLocalBrowserOrigin(origin) &&
-    (isLocalServerHost(requestHost) || isPrivateNetworkHost(requestHost))
-}
-
 function withCors(response: Response, cors: CorsResolution): Response {
   const headers = new Headers(response.headers)
   for (const [key, value] of Object.entries(cors.headers)) {
@@ -142,15 +79,13 @@ export function startServer(port = PORT, host = HOST) {
       : host
 
   /**
-   * Auth is required when explicitly opted in or when bound to a non-localhost address.
-   * - Default localhost dev: no auth needed (tests pass as-is).
-   * - Production / non-localhost (e.g. 0.0.0.0): auth enforced automatically.
-   * - Explicit opt-in: SERVER_AUTH_REQUIRED=1 forces auth even on localhost.
+   * Auth is opt-in only. H5/LAN access is currently left open by default so
+   * desktop and browser clients do not get blocked by missing token state.
+   * Explicit opt-in remains available for private deployments.
    */
   const forceAuth =
     SERVER_OPTIONS.authRequired ||
     process.env.SERVER_AUTH_REQUIRED === '1'
-  const remoteHostAuthRequired = !isLocalServerHost(host)
 
   const server = Bun.serve<WebSocketData>({
     port,
@@ -162,10 +97,7 @@ export function startServer(port = PORT, host = HOST) {
       const url = new URL(req.url)
       const origin = req.headers.get('Origin')
       const cors = await resolveCors(origin, url.origin)
-      const authRequired = forceAuth || (
-        remoteHostAuthRequired &&
-        !canBypassRemoteAuthForLocalBrowser(origin, url.hostname)
-      )
+      const authRequired = forceAuth
 
       // Handle CORS preflight
       if (req.method === 'OPTIONS') {
