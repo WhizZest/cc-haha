@@ -48,6 +48,11 @@ type Attachment = {
   quote?: string
 }
 
+type ComposerDraft = {
+  input: string
+  attachments: Attachment[]
+}
+
 type ChatInputProps = {
   variant?: 'default' | 'hero'
   compact?: boolean
@@ -93,6 +98,21 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
   const slashMenuRef = useRef<HTMLDivElement>(null)
   const fileSearchRef = useRef<FileSearchMenuHandle>(null)
   const slashItemRefs = useRef<(HTMLButtonElement | null)[]>([])
+  const composerDraftsRef = useRef<Record<string, ComposerDraft>>({})
+  const previousActiveTabIdRef = useRef<string | null>(null)
+  const inputRef = useRef(input)
+  const attachmentsRef = useRef(attachments)
+  const setComposerInput = useCallback((value: string) => {
+    inputRef.current = value
+    setInput(value)
+  }, [])
+  const setComposerAttachments = useCallback((value: Attachment[] | ((previous: Attachment[]) => Attachment[])) => {
+    setAttachments((previous) => {
+      const next = typeof value === 'function' ? value(previous) : value
+      attachmentsRef.current = next
+      return next
+    })
+  }, [])
   const { sendMessage, stopGeneration } = useChatStore()
   const activeTabId = useTabStore((s) => s.activeTabId)
   const sessionState = useChatStore((s) => activeTabId ? s.sessions[activeTabId] : undefined)
@@ -146,14 +166,47 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
   const slashCommandCount = slashCommands.length
 
   useEffect(() => {
+    inputRef.current = input
+  }, [input])
+
+  useEffect(() => {
+    attachmentsRef.current = attachments
+  }, [attachments])
+
+  useEffect(() => {
+    const previousActiveTabId = previousActiveTabIdRef.current
+
+    if (previousActiveTabId === activeTabId) return
+
+    if (previousActiveTabId) {
+      composerDraftsRef.current[previousActiveTabId] = {
+        input: inputRef.current,
+        attachments: attachmentsRef.current,
+      }
+    }
+
+    const nextDraft = activeTabId ? composerDraftsRef.current[activeTabId] : undefined
+    setComposerInput(nextDraft?.input ?? '')
+    setComposerAttachments(nextDraft?.attachments ?? [])
+    setPlusMenuOpen(false)
+    setSlashMenuOpen(false)
+    setFileSearchOpen(false)
+    setLocalSlashPanel(null)
+    setSlashFilter('')
+    setAtFilter('')
+    setAtCursorPos(-1)
+    previousActiveTabIdRef.current = activeTabId
+  }, [activeTabId, setComposerAttachments, setComposerInput])
+
+  useEffect(() => {
     textareaRef.current?.focus()
   }, [isActive])
 
   useEffect(() => {
     if (!composerPrefill) return
 
-    setInput(composerPrefill.text)
-    setAttachments(
+    setComposerInput(composerPrefill.text)
+    setComposerAttachments(
       (composerPrefill.attachments ?? [])
         .filter((attachment) => attachment.type === 'image' || attachment.data)
         .map((attachment, index) => ({
@@ -178,7 +231,7 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
       const cursor = composerPrefill.text.length
       el?.setSelectionRange(cursor, cursor)
     })
-  }, [composerPrefill])
+  }, [composerPrefill, setComposerAttachments, setComposerInput])
 
   const refreshGitInfo = useCallback(() => {
     if (!activeTabId) {
@@ -204,7 +257,7 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
 
   useEffect(() => {
     if (!isMemberSession) return
-    setAttachments([])
+    setComposerAttachments([])
     setPlusMenuOpen(false)
     setSlashMenuOpen(false)
     setFileSearchOpen(false)
@@ -370,11 +423,11 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
   const handleInputChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = event.target.value
     if (isMemberSession) {
-      setInput(value)
+      setComposerInput(value)
       return
     }
     const cursorPos = event.target.selectionStart ?? value.length
-    setInput(value)
+    setComposerInput(value)
     detectSlashTrigger(value, cursorPos)
     detectAtTrigger(value, cursorPos)
   }
@@ -384,7 +437,7 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
     if (!el) return
     const cursorPos = el.selectionStart ?? input.length
     const replacement = replaceSlashToken(input, cursorPos, command)
-    setInput(replacement.value)
+    setComposerInput(replacement.value)
     setSlashMenuOpen(false)
     requestAnimationFrame(() => {
       el.focus()
@@ -439,7 +492,7 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
 
     if (pendingSlashUiAction?.type === 'panel') {
       setLocalSlashPanel(pendingSlashUiAction.command as LocalSlashCommandName)
-      setInput('')
+      setComposerInput('')
       setSlashMenuOpen(false)
       setFileSearchOpen(false)
       setPlusMenuOpen(false)
@@ -449,7 +502,7 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
     if (pendingSlashUiAction?.type === 'settings') {
       useUIStore.getState().setPendingSettingsTab(pendingSlashUiAction.tab)
       useTabStore.getState().openTab(SETTINGS_TAB_ID, 'Settings', 'settings')
-      setInput('')
+      setComposerInput('')
       setSlashMenuOpen(false)
       setFileSearchOpen(false)
       setPlusMenuOpen(false)
@@ -530,8 +583,8 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
       displayContent,
       displayAttachments: visibleAttachmentPayload,
     })
-    setInput('')
-    setAttachments([])
+    setComposerInput('')
+    setComposerAttachments([])
     if (!isMemberSession) {
       clearWorkspaceReferences(activeTabId!)
       if (targetSessionId !== activeTabId) clearWorkspaceReferences(targetSessionId)
@@ -631,7 +684,7 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
       const id = `att-${Date.now()}-${Math.random().toString(36).slice(2)}`
       const reader = new FileReader()
       reader.onload = () => {
-        setAttachments((prev) => [
+        setComposerAttachments((prev) => [
           ...prev,
           {
             id,
@@ -659,7 +712,7 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
       const isImage = file.type.startsWith('image/')
       const reader = new FileReader()
       reader.onload = () => {
-        setAttachments((prev) => [
+        setComposerAttachments((prev) => [
           ...prev,
           {
             id,
@@ -688,7 +741,7 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
   }
 
   const removeAttachment = (id: string) => {
-    setAttachments((prev) => prev.filter((attachment) => attachment.id !== id))
+    setComposerAttachments((prev) => prev.filter((attachment) => attachment.id !== id))
     if (activeTabId) removeWorkspaceReference(activeTabId, id)
   }
 
@@ -697,7 +750,7 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
     const el = textareaRef.current
     const cursorPos = el?.selectionStart ?? input.length
     const replacement = replaceSlashToken(input, cursorPos, '', { trailingSpace: false })
-    setInput(replacement.value)
+    setComposerInput(replacement.value)
     setPlusMenuOpen(false)
     setSlashFilter('')
     setSlashMenuOpen(true)
@@ -761,7 +814,7 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
                 const tokenEnd = atCursorPos + 1 + atFilter.length
                 const newValue = `${input.slice(0, atCursorPos)}${replacement}${input.slice(tokenEnd)}`
                 const newCursorPos = atCursorPos + replacement.length
-                setInput(newValue)
+                setComposerInput(newValue)
                 setAtFilter(relativePath)
                 requestAnimationFrame(() => {
                   textareaRef.current?.focus()
@@ -785,7 +838,7 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
                       name: referenceName,
                     })
                   }
-                  setInput(newValue)
+                  setComposerInput(newValue)
                   setFileSearchOpen(false)
                   setAtFilter('')
                   setAtCursorPos(-1)

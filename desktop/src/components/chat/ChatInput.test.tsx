@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import '@testing-library/jest-dom'
+import { act } from 'react'
 
 const viewportMocks = vi.hoisted(() => ({
   isMobile: false,
@@ -166,6 +167,118 @@ describe('ChatInput file mentions', () => {
     mocks.list.mockResolvedValue({ sessions: [], total: 0 })
     mocks.getMessages.mockResolvedValue({ messages: [] })
     mocks.getSlashCommands.mockResolvedValue({ commands: [] })
+  })
+
+  it('keeps unsent composer drafts isolated when switching between session tabs', async () => {
+    const historySessionId = 'history-session'
+    useTabStore.setState({
+      activeTabId: sessionId,
+      tabs: [
+        { sessionId, title: 'New session', type: 'session', status: 'idle' },
+        { sessionId: historySessionId, title: 'History session', type: 'session', status: 'idle' },
+      ],
+    })
+    useSessionStore.setState({
+      sessions: [
+        {
+          id: sessionId,
+          title: 'New session',
+          createdAt: '2026-05-01T00:00:00.000Z',
+          modifiedAt: '2026-05-01T00:00:00.000Z',
+          messageCount: 0,
+          projectPath: '/repo',
+          workDir: '/repo',
+          workDirExists: true,
+        },
+        {
+          id: historySessionId,
+          title: 'History session',
+          createdAt: '2026-05-01T00:00:00.000Z',
+          modifiedAt: '2026-05-01T00:00:00.000Z',
+          messageCount: 1,
+          projectPath: '/repo',
+          workDir: '/repo',
+          workDirExists: true,
+        },
+      ],
+      activeSessionId: sessionId,
+    })
+    useChatStore.setState({
+      sessions: {
+        [sessionId]: {
+          messages: [],
+          chatState: 'idle',
+          connectionState: 'connected',
+          streamingText: '',
+          streamingToolInput: '',
+          activeToolUseId: null,
+          activeToolName: null,
+          activeThinkingId: null,
+          pendingPermission: null,
+          pendingComputerUsePermission: null,
+          tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          elapsedSeconds: 0,
+          statusVerb: '',
+          slashCommands: [],
+          agentTaskNotifications: {},
+          elapsedTimer: null,
+        },
+        [historySessionId]: {
+          messages: [{ id: 'history-message', type: 'assistant_text', content: 'ready', timestamp: 1 }],
+          chatState: 'idle',
+          connectionState: 'connected',
+          streamingText: '',
+          streamingToolInput: '',
+          activeToolUseId: null,
+          activeToolName: null,
+          activeThinkingId: null,
+          pendingPermission: null,
+          pendingComputerUsePermission: null,
+          tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          elapsedSeconds: 0,
+          statusVerb: '',
+          slashCommands: [],
+          agentTaskNotifications: {},
+          elapsedTimer: null,
+        },
+      },
+    })
+
+    render(<ChatInput variant="hero" />)
+
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(input, {
+      target: { value: 'new tab draft', selectionStart: 13 },
+    })
+    expect(input.value).toBe('new tab draft')
+
+    act(() => {
+      useTabStore.setState({ activeTabId: historySessionId })
+    })
+
+    await waitFor(() => {
+      expect(input.value).toBe('')
+    })
+
+    fireEvent.change(input, {
+      target: { value: 'history tab draft', selectionStart: 17 },
+    })
+
+    act(() => {
+      useTabStore.setState({ activeTabId: sessionId })
+    })
+
+    await waitFor(() => {
+      expect(input.value).toBe('new tab draft')
+    })
+
+    act(() => {
+      useTabStore.setState({ activeTabId: historySessionId })
+    })
+
+    await waitFor(() => {
+      expect(input.value).toBe('history tab draft')
+    })
   })
 
   it('shows branch and worktree launch controls for an empty active Git session', async () => {
