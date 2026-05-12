@@ -73,3 +73,24 @@ export async function requireAuth(req: Request, tokenOverride?: string | null): 
   }
   return null
 }
+
+export async function requireH5Token(req: Request, tokenOverride?: string | null): Promise<Response | null> {
+  const parsedAuth = parseBearerToken(req.headers.get('Authorization'))
+  const h5Token = tokenOverride ?? parsedAuth.token
+  if (!h5Token) {
+    return Response.json(
+      { error: 'Unauthorized', message: 'Missing H5 access token' },
+      { status: 401 },
+    )
+  }
+
+  const h5AccessService = new H5AccessService()
+  if (!await h5AccessService.validateToken(h5Token)) {
+    return Response.json(
+      { error: 'Unauthorized', message: 'Invalid H5 access token' },
+      { status: 401 },
+    )
+  }
+
+  return null
+}
