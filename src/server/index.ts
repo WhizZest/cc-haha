@@ -20,6 +20,8 @@ import { enableConfigs } from '../utils/config.js'
 import { diagnosticsService } from './services/diagnosticsService.js'
 import { ensurePersistentStorageUpgraded } from './services/persistentStorageMigrations.js'
 import { handleStaticH5Request } from './staticH5.js'
+import { shouldRequireH5Token } from './h5AccessPolicy.js'
+import { H5AccessService } from './services/h5AccessService.js'
 
 function readArgValue(flag: string): string | undefined {
   const args = process.argv.slice(2)
@@ -79,13 +81,13 @@ export function startServer(port = PORT, host = HOST) {
       : host
 
   /**
-   * Auth is opt-in only. H5/LAN access is currently left open by default so
-   * desktop and browser clients do not get blocked by missing token state.
-   * Explicit opt-in remains available for private deployments.
+   * Explicit deployment auth remains a stronger override than H5-scoped
+   * request gating.
    */
   const forceAuth =
     SERVER_OPTIONS.authRequired ||
     process.env.SERVER_AUTH_REQUIRED === '1'
+  const h5AccessService = new H5AccessService()
 
   const server = Bun.serve<WebSocketData>({
     port,
@@ -96,8 +98,17 @@ export function startServer(port = PORT, host = HOST) {
       await ensurePersistentStorageUpgraded()
       const url = new URL(req.url)
       const origin = req.headers.get('Origin')
-      const cors = await resolveCors(origin, url.origin)
-      const authRequired = forceAuth
+      const h5Settings = await h5AccessService.getSettings()
+      const cors = await resolveCors(origin, url.origin, {
+        h5Enabled: h5Settings.enabled,
+        isOriginAllowed: (candidateOrigin) => h5AccessService.isOriginAllowed(candidateOrigin),
+      })
+      const authRequired = shouldRequireH5Token({
+        request: req,
+        url,
+        h5Enabled: h5Settings.enabled,
+        explicitAuthRequired: forceAuth,
+      })
 
       // Handle CORS preflight
       if (req.method === 'OPTIONS') {
@@ -242,6 +253,8 @@ export function startServer(port = PORT, host = HOST) {
         )
       }
 
+      // Static H5 shell/assets are non-secret bootstrap content and must load
+      // before the browser can read the QR token; API/proxy/ws stay protected above.
       const staticResponse = await handleStaticH5Request(req, url)
       if (staticResponse) {
         return staticResponse

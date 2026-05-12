@@ -9,6 +9,8 @@ import { ProviderService } from '../services/providerService.js'
 let server: ReturnType<typeof Bun.serve> | undefined
 let baseUrl = ''
 let wsBaseUrl = ''
+let lanBaseUrl = ''
+let lanWsBaseUrl = ''
 let tmpDir = ''
 let originalConfigDir: string | undefined
 let originalAnthropicApiKey: string | undefined
@@ -36,6 +38,26 @@ function randomPort(): number {
   return 18000 + Math.floor(Math.random() * 10000)
 }
 
+function resolvePrivateLanBaseUrl(port: number): string | null {
+  for (const entries of Object.values(os.networkInterfaces())) {
+    for (const entry of entries ?? []) {
+      if (entry.family !== 'IPv4' || entry.internal) {
+        continue
+      }
+
+      if (
+        entry.address.startsWith('10.') ||
+        entry.address.startsWith('192.168.') ||
+        /^172\.(1[6-9]|2\d|3[0-1])\./.test(entry.address)
+      ) {
+        return `http://${entry.address}:${port}`
+      }
+    }
+  }
+
+  return null
+}
+
 async function startRemoteServer(options: { authRequired?: boolean } = {}): Promise<void> {
   if (options.authRequired) {
     process.env.SERVER_AUTH_REQUIRED = '1'
@@ -47,6 +69,8 @@ async function startRemoteServer(options: { authRequired?: boolean } = {}): Prom
   server = startServer(port, '0.0.0.0')
   baseUrl = `http://127.0.0.1:${port}`
   wsBaseUrl = `ws://127.0.0.1:${port}`
+  lanBaseUrl = resolvePrivateLanBaseUrl(port) ?? ''
+  lanWsBaseUrl = lanBaseUrl.replace(/^http/, 'ws')
   await waitForServer(`${baseUrl}/health`)
 }
 
@@ -236,8 +260,8 @@ describe('remote H5 auth and CORS integration', () => {
     })
   })
 
-  test('allows arbitrary CORS origins while default H5 access is open', async () => {
-    const token = await enableH5Access({
+  test('rejects arbitrary CORS origins when H5 access is enabled', async () => {
+    await enableH5Access({
       allowedOrigins: ['https://allowed.example.com'],
     })
 
@@ -245,27 +269,26 @@ describe('remote H5 auth and CORS integration', () => {
       method: 'OPTIONS',
       headers: {
         ...makeUpgradeHeaders('https://blocked.example.com'),
-        Authorization: `Bearer ${token}`,
         'Access-Control-Request-Method': 'GET',
       },
     })
 
-    expect(response.status).toBe(204)
-    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://blocked.example.com')
+    expect(response.status).toBe(403)
   })
 
   test('allows same-origin H5 browser requests without a separate origin allowlist entry', async () => {
     const token = await enableH5Access()
+    const requestBaseUrl = lanBaseUrl || baseUrl
 
-    const response = await fetch(`${baseUrl}/api/status`, {
+    const response = await fetch(`${requestBaseUrl}/api/status`, {
       headers: {
-        Origin: baseUrl,
+        Origin: requestBaseUrl,
         Authorization: `Bearer ${token}`,
       },
     })
 
     expect(response.status).toBe(200)
-    expect(response.headers.get('Access-Control-Allow-Origin')).toBe(baseUrl)
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe(requestBaseUrl)
   })
 
   test('allows configured CORS origins and includes Vary: Origin', async () => {
@@ -291,6 +314,60 @@ describe('remote H5 auth and CORS integration', () => {
 
   test('opens websocket upgrades without H5 token by default', async () => {
     await expectWebSocketOpen(`${wsBaseUrl}/ws/h5-auth-test`)
+  })
+
+  test('requires H5 token for LAN REST requests when H5 access is enabled', async () => {
+    const token = await enableH5Access()
+
+    expect(lanBaseUrl).toBeTruthy()
+
+    const missingTokenResponse = await fetch(`${lanBaseUrl}/api/status`, {
+      headers: {
+        Origin: lanBaseUrl,
+      },
+    })
+    expect(missingTokenResponse.status).toBe(401)
+
+    const validTokenResponse = await fetch(`${lanBaseUrl}/api/status`, {
+      headers: {
+        Origin: lanBaseUrl,
+        Authorization: `Bearer ${token}`,
+      },
+    })
+    expect(validTokenResponse.status).toBe(200)
+  })
+
+  test('keeps Tauri loopback REST requests tokenless when H5 access is enabled', async () => {
+    await enableH5Access()
+
+    const response = await fetch(`${baseUrl}/api/status`, {
+      headers: {
+        Origin: 'http://tauri.localhost',
+      },
+    })
+
+    expect(response.status).toBe(200)
+  })
+
+  test('keeps local loopback adapter requests tokenless when H5 access is enabled', async () => {
+    await enableH5Access()
+
+    const response = await fetch(`${baseUrl}/api/adapters`)
+
+    expect(response.status).not.toBe(401)
+  })
+
+  test('requires H5 token for LAN websocket requests when H5 access is enabled', async () => {
+    const token = await enableH5Access()
+
+    expect(lanBaseUrl).toBeTruthy()
+
+    const missingTokenResponse = await fetch(`${lanBaseUrl}/ws/h5-auth-test`, {
+      headers: makeUpgradeHeaders(lanBaseUrl),
+    })
+    expect(missingTokenResponse.status).toBe(401)
+
+    await expectWebSocketOpen(`${lanWsBaseUrl}/ws/h5-auth-test?token=${token}`)
   })
 
   test('honors explicit auth opt-in for REST and websocket requests', async () => {
