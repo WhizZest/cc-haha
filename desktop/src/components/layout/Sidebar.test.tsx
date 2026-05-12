@@ -37,8 +37,6 @@ vi.mock('../../i18n', () => ({
       'sidebar.batchDeleteConfirm': 'Delete {count} sessions? This cannot be undone.',
       'sidebar.batchDeleteConfirmBody': 'The following sessions will be deleted:',
       'sidebar.batchDeleteMore': '...and {count} more',
-      'sidebar.batchClearOlderThan30': 'Clear >30d',
-      'sidebar.batchClearOlderThan7': 'Clear >7d',
       'sidebar.batchExit': 'Cancel batch mode',
       'sidebar.batchDeleteSucceeded': 'Deleted {count} sessions.',
       'sidebar.batchDeleteFailed': '{count} sessions could not be deleted.',

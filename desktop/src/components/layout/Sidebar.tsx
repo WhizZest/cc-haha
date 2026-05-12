@@ -186,12 +186,6 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
     }
   }, [deselectSessions, selectSessions, selectedSessionIds])
 
-  const selectOlderThan = useCallback((days: number) => {
-    const ids = getSessionsOlderThan(filteredSessions, days)
-    selectSessions(ids)
-    requestBatchDelete(ids)
-  }, [filteredSessions, requestBatchDelete, selectSessions])
-
   const handleStartRename = useCallback((id: string, currentTitle: string) => {
     setContextMenu(null)
     setRenamingId(id)
@@ -444,22 +438,6 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
                     className="rounded-md bg-[var(--color-error)] px-2 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                   >
                     {t('sidebar.batchDeleteSelected', { count: selectedCount })}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => selectOlderThan(7)}
-                    disabled={getSessionsOlderThan(filteredSessions, 7).length === 0}
-                    className="rounded-md border border-[var(--color-border)] px-2 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)] disabled:opacity-50"
-                  >
-                    {t('sidebar.batchClearOlderThan7')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => selectOlderThan(30)}
-                    disabled={getSessionsOlderThan(filteredSessions, 30).length === 0}
-                    className="rounded-md border border-[var(--color-border)] px-2 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)] disabled:opacity-50"
-                  >
-                    {t('sidebar.batchClearOlderThan30')}
                   </button>
                 </div>
               </div>
@@ -717,13 +695,6 @@ function groupByTime(sessions: SessionListItem[]): Map<TimeGroup, SessionListIte
   }
 
   return groups
-}
-
-function getSessionsOlderThan(sessions: SessionListItem[], days: number): string[] {
-  const threshold = Date.now() - days * 86400000
-  return sessions
-    .filter((session) => new Date(session.modifiedAt).getTime() < threshold)
-    .map((session) => session.id)
 }
 
 function NavItem({

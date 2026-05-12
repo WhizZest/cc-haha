@@ -37,8 +37,6 @@ export const zh: Record<TranslationKey, string> = {
   'sidebar.batchDeleteConfirm': '确定要删除 {count} 个会话吗？此操作不可撤销。',
   'sidebar.batchDeleteConfirmBody': '以下会话将被删除：',
   'sidebar.batchDeleteMore': '...还有 {count} 条',
-  'sidebar.batchClearOlderThan30': '清空 30 天前',
-  'sidebar.batchClearOlderThan7': '清空 7 天前',
   'sidebar.batchExit': '退出批量管理',
   'sidebar.batchDeleteSucceeded': '已删除 {count} 个会话。',
   'sidebar.batchDeleteFailed': '有 {count} 个会话删除失败。',
