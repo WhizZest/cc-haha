@@ -1184,7 +1184,14 @@ export const en = {
   'fileSearch.loadFailed': 'Failed to load directory',
   'fileSearch.navigate': 'navigate',
   'fileSearch.attach': 'attach',
+  'fileSearch.select': 'select',
+  'fileSearch.open': 'open folder',
   'fileSearch.close': 'close',
+  'fileSearch.directory': 'folder',
+  'fileSearch.currentDirectory': 'current folder',
+  'fileSearch.folderTag': 'folder',
+  'fileSearch.fileTag': 'file',
+  'fileSearch.openFolder': 'Open folder',
 
   // ─── Teams ──────────────────────────────────────
   'teams.backToLeader': '\u2190 Back to Leader',

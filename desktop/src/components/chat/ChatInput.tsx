@@ -42,6 +42,7 @@ type Attachment = {
   mimeType?: string
   previewUrl?: string
   data?: string
+  isDirectory?: boolean
   lineStart?: number
   lineEnd?: number
   note?: string
@@ -66,6 +67,7 @@ function workspaceReferenceToAttachment(reference: WorkspaceChatReference): Atta
     name: reference.name,
     type: 'file',
     path: reference.path,
+    isDirectory: reference.isDirectory,
     lineStart: reference.lineStart,
     lineEnd: reference.lineEnd,
     note: reference.note,
@@ -535,6 +537,7 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
       type: 'file' as const,
       name: reference.name,
       path: reference.absolutePath ?? reference.path,
+      isDirectory: reference.isDirectory,
       lineStart: reference.lineStart,
       lineEnd: reference.lineEnd,
       note: reference.note,
@@ -546,6 +549,7 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
         type: 'file' as const,
         name: reference.name,
         path: reference.path,
+        isDirectory: reference.isDirectory,
         lineStart: reference.lineStart,
         lineEnd: reference.lineEnd,
         note: reference.note,
@@ -602,7 +606,7 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
     // Route file search navigation keys to FileSearchMenu
     if (fileSearchOpen) {
       const key = event.key
-      if (key === 'ArrowDown' || key === 'ArrowUp' || key === 'Enter' || key === 'Tab' || key === 'Escape') {
+      if (key === 'ArrowDown' || key === 'ArrowUp' || key === 'ArrowRight' || key === 'Enter' || key === 'Tab' || key === 'Escape') {
         event.preventDefault()
         if (key === 'Escape') {
           setFileSearchOpen(false)
@@ -821,7 +825,7 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
                   textareaRef.current?.setSelectionRange(newCursorPos, newCursorPos)
                 })
               }}
-              onSelect={(path, name) => {
+              onSelect={(path, name, isDirectory) => {
                 if (atCursorPos >= 0) {
                   const referenceName = name.split('/').filter(Boolean).pop() ?? name
                   const tokenEnd = atCursorPos + 1 + atFilter.length
@@ -835,7 +839,8 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
                       kind: 'file',
                       path,
                       absolutePath: path,
-                      name: referenceName,
+                      name: isDirectory ? `${referenceName}/` : referenceName,
+                      isDirectory,
                     })
                   }
                   setComposerInput(newValue)

@@ -8,6 +8,7 @@ export type AttachmentPreview = {
   path?: string
   data?: string
   previewUrl?: string
+  isDirectory?: boolean
   lineStart?: number
   lineEnd?: number
   note?: string
@@ -92,7 +93,7 @@ export function AttachmentGallery({ attachments, variant = 'message', onRemove }
               ].join(' ')}
             >
               <span className="material-symbols-outlined shrink-0 text-[17px] text-[var(--color-text-tertiary)]">
-                {attachment.lineStart ? 'chat_bubble' : 'description'}
+                {attachment.lineStart ? 'chat_bubble' : attachment.isDirectory ? 'folder' : 'description'}
               </span>
               <span className="min-w-0 max-w-[220px] truncate text-[13px] font-medium leading-none text-[var(--color-text-primary)]">
                 {attachment.name}

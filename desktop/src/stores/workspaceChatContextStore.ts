@@ -8,6 +8,7 @@ export type WorkspaceChatReference = {
   path: string
   absolutePath?: string
   name: string
+  isDirectory?: boolean
   lineStart?: number
   lineEnd?: number
   note?: string

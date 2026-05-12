@@ -1186,7 +1186,14 @@ export const zh: Record<TranslationKey, string> = {
   'fileSearch.loadFailed': '目录加载失败',
   'fileSearch.navigate': '导航',
   'fileSearch.attach': '附加',
+  'fileSearch.select': '选择',
+  'fileSearch.open': '打开目录',
   'fileSearch.close': '关闭',
+  'fileSearch.directory': '目录',
+  'fileSearch.currentDirectory': '当前目录',
+  'fileSearch.folderTag': '目录',
+  'fileSearch.fileTag': '文件',
+  'fileSearch.openFolder': '打开目录',
 
   // ─── Teams ──────────────────────────────────────
   'teams.backToLeader': '\u2190 返回主控',

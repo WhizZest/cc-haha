@@ -31,6 +31,7 @@ export type AttachmentRef = {
   path?: string
   data?: string
   mimeType?: string
+  isDirectory?: boolean
   lineStart?: number
   lineEnd?: number
   note?: string
@@ -43,6 +44,7 @@ export type UIAttachment = {
   path?: string
   data?: string
   mimeType?: string
+  isDirectory?: boolean
   lineStart?: number
   lineEnd?: number
   note?: string

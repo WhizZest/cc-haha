@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test'
+import { execFileSync } from 'child_process'
 import * as fs from 'fs'
 import * as fsp from 'fs/promises'
 import * as os from 'os'
@@ -22,6 +23,13 @@ afterEach(async () => {
   cleanupDirs.clear()
 })
 
+function git(cwd: string, ...args: string[]): string {
+  return execFileSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+  })
+}
+
 describe('filesystem API', () => {
   it('allows browsing a directory under the user home directory', async () => {
     const homeFixtureDir = await fsp.mkdtemp(path.join(os.homedir(), 'claude-filesystem-test-'))
@@ -39,6 +47,82 @@ describe('filesystem API', () => {
     expect(res.status).toBe(200)
     const body = await res.json() as { entries: Array<{ name: string }> }
     expect(body.entries.some((entry) => entry.name === 'note.txt')).toBe(true)
+  })
+
+  it('fuzzy searches files and directories below the selected root', async () => {
+    const homeFixtureDir = await fsp.mkdtemp(path.join(os.homedir(), 'claude-filesystem-test-'))
+    cleanupDirs.add(homeFixtureDir)
+    git(homeFixtureDir, 'init')
+    await fsp.mkdir(path.join(homeFixtureDir, 'src', 'commands'), { recursive: true })
+    await fsp.mkdir(path.join(homeFixtureDir, 'src', 'commands', 'files'), { recursive: true })
+    await fsp.mkdir(path.join(homeFixtureDir, 'src', 'constants'), { recursive: true })
+    await fsp.mkdir(path.join(homeFixtureDir, '__pycache__'), { recursive: true })
+    await fsp.mkdir(path.join(homeFixtureDir, 'node_modules', 'pkg'), { recursive: true })
+    await fsp.mkdir(path.join(homeFixtureDir, '.venv', 'lib'), { recursive: true })
+    await fsp.mkdir(path.join(homeFixtureDir, 'tmp-ignore'), { recursive: true })
+    await fsp.writeFile(path.join(homeFixtureDir, '.gitignore'), ['__pycache__/', 'node_modules/', '.venv/', 'venv/'].join('\n'))
+    await fsp.writeFile(path.join(homeFixtureDir, '.ignore'), 'tmp-ignore/')
+    await fsp.writeFile(path.join(homeFixtureDir, 'src', 'commands', 'files.ts'), 'export {}')
+    await fsp.writeFile(path.join(homeFixtureDir, 'src', 'commands', 'files', 'index.ts'), 'export {}')
+    await fsp.writeFile(path.join(homeFixtureDir, 'src', 'constants', 'fileSearch.ts'), 'export {}')
+    await fsp.writeFile(path.join(homeFixtureDir, '__pycache__', 'fileSearch.cpython-311.pyc'), '')
+    await fsp.writeFile(path.join(homeFixtureDir, 'node_modules', 'pkg', 'files.js'), '')
+    await fsp.writeFile(path.join(homeFixtureDir, '.venv', 'lib', 'files.py'), '')
+    await fsp.writeFile(path.join(homeFixtureDir, 'tmp-ignore', 'files.tmp'), '')
+
+    const res = await handleFilesystemRoute(
+      '/api/filesystem/browse',
+      makeUrl('/api/filesystem/browse', {
+        path: homeFixtureDir,
+        search: 'files',
+        includeFiles: 'true',
+      }),
+    )
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as { entries: Array<{ name: string; relativePath?: string; isDirectory: boolean }> }
+    expect(body.entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: 'files.ts',
+        relativePath: 'src/commands/files.ts',
+        isDirectory: false,
+      }),
+    ]))
+    expect(body.entries.some((entry) => entry.relativePath === 'src/constants/fileSearch.ts')).toBe(true)
+    expect(body.entries.find((entry) => entry.relativePath === 'src/commands/files')?.isDirectory).toBe(true)
+    expect(body.entries.some((entry) => entry.relativePath === '__pycache__/fileSearch.cpython-311.pyc')).toBe(false)
+    expect(body.entries.some((entry) => entry.relativePath === 'node_modules/pkg/files.js')).toBe(false)
+    expect(body.entries.some((entry) => entry.relativePath === '.venv/lib/files.py')).toBe(false)
+    expect(body.entries.some((entry) => entry.relativePath === 'tmp-ignore/files.tmp')).toBe(false)
+  })
+
+  it('falls back to ripgrep search outside git and still respects ignore files', async () => {
+    const homeFixtureDir = await fsp.mkdtemp(path.join(os.homedir(), 'claude-filesystem-test-'))
+    cleanupDirs.add(homeFixtureDir)
+    await fsp.mkdir(path.join(homeFixtureDir, 'app'), { recursive: true })
+    await fsp.mkdir(path.join(homeFixtureDir, 'node_modules', 'pkg'), { recursive: true })
+    await fsp.writeFile(path.join(homeFixtureDir, '.gitignore'), 'node_modules/')
+    await fsp.writeFile(path.join(homeFixtureDir, 'app', 'cache-result.ts'), 'export {}')
+    await fsp.writeFile(path.join(homeFixtureDir, 'node_modules', 'pkg', 'cache-result.js'), '')
+
+    const res = await handleFilesystemRoute(
+      '/api/filesystem/browse',
+      makeUrl('/api/filesystem/browse', {
+        path: homeFixtureDir,
+        search: 'cache',
+        includeFiles: 'true',
+      }),
+    )
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as { entries: Array<{ relativePath?: string; isDirectory: boolean }> }
+    expect(body.entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        relativePath: 'app/cache-result.ts',
+        isDirectory: false,
+      }),
+    ]))
+    expect(body.entries.some((entry) => entry.relativePath === 'node_modules/pkg/cache-result.js')).toBe(false)
   })
 
   it('accepts /private/tmp aliases on macOS for browsing and file serving', async () => {

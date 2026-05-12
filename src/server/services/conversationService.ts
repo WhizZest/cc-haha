@@ -34,6 +34,7 @@ type AttachmentRef = {
   path?: string
   data?: string
   mimeType?: string
+  isDirectory?: boolean
 }
 
 type SessionProcess = {

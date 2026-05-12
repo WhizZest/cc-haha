@@ -536,6 +536,7 @@ describe('ChatInput file mentions', () => {
         type: 'file',
         name: 'conditions.py',
         path: '/repo/backend/src/conditions.py',
+        isDirectory: false,
         lineStart: undefined,
         lineEnd: undefined,
         note: undefined,
@@ -548,6 +549,59 @@ describe('ChatInput file mentions', () => {
       content: '记一下这个文件讲了什么东西。',
       modelContent: '@"/repo/backend/src/conditions.py" 记一下这个文件讲了什么东西。',
       attachments: [{ name: 'conditions.py', path: '/repo/backend/src/conditions.py' }],
+    })
+  })
+
+  it('turns a selected @ directory into a workspace chip and model path reference', async () => {
+    mocks.search.mockResolvedValueOnce({
+      currentPath: '/repo',
+      parentPath: '/',
+      query: 'backend',
+      entries: [
+        { name: 'backend', path: '/repo/backend', relativePath: 'backend', isDirectory: true },
+      ],
+    })
+
+    render(<ChatInput compact />)
+
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(input, {
+      target: {
+        value: '@backend 讲一下这个目录。',
+        selectionStart: '@backend'.length,
+      },
+    })
+
+    fireEvent.click(await screen.findByRole('option', { name: /backend/i }))
+
+    await waitFor(() => {
+      expect(input.value).toBe('讲一下这个目录。')
+    })
+    expect(screen.getByText('backend/')).toBeInTheDocument()
+    expect(screen.getByText('folder')).toBeInTheDocument()
+
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(mocks.wsSend).toHaveBeenCalledWith(sessionId, {
+      type: 'user_message',
+      content: '讲一下这个目录。',
+      attachments: [{
+        type: 'file',
+        name: 'backend/',
+        path: '/repo/backend',
+        isDirectory: true,
+        lineStart: undefined,
+        lineEnd: undefined,
+        note: undefined,
+        quote: undefined,
+      }],
+    })
+    const messages = useChatStore.getState().sessions[sessionId]?.messages ?? []
+    expect(messages[messages.length - 1]).toMatchObject({
+      type: 'user_text',
+      content: '讲一下这个目录。',
+      modelContent: '@"/repo/backend" 讲一下这个目录。',
+      attachments: [{ name: 'backend/', path: '/repo/backend' }],
     })
   })
 
