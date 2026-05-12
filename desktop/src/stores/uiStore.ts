@@ -33,6 +33,7 @@ export type SettingsTab =
   | 'permissions'
   | 'activity'
   | 'general'
+  | 'h5Access'
   | 'adapters'
   | 'terminal'
   | 'mcp'

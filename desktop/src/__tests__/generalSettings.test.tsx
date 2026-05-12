@@ -325,10 +325,16 @@ describe('Settings > General tab', () => {
     })
   })
 
-  it('renders the H5 section with access disabled by default', () => {
+  it('moves H5 access out of General into its own Settings tab', () => {
     render(<Settings />)
 
     fireEvent.click(screen.getByText('General'))
+    expect(screen.queryByRole('region', { name: 'H5 Access' })).not.toBeInTheDocument()
+
+    const generalTab = screen.getByText('General')
+    const h5Tab = screen.getByText('H5 Access')
+    expect((generalTab.compareDocumentPosition(h5Tab) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0).toBe(true)
+    fireEvent.click(h5Tab)
 
     const section = screen.getByRole('region', { name: 'H5 Access' })
     expect(within(section).getByLabelText('Enable H5 access')).not.toBeChecked()
@@ -349,7 +355,7 @@ describe('Settings > General tab', () => {
     })
     render(<Settings />)
 
-    fireEvent.click(screen.getByText('General'))
+    fireEvent.click(screen.getByText('H5 Access'))
     const section = screen.getByRole('region', { name: 'H5 Access' })
 
     fireEvent.click(within(section).getByLabelText('Enable H5 access'))
@@ -376,7 +382,7 @@ describe('Settings > General tab', () => {
     })
     render(<Settings />)
 
-    fireEvent.click(screen.getByText('General'))
+    fireEvent.click(screen.getByText('H5 Access'))
     const section = screen.getByRole('region', { name: 'H5 Access' })
     fireEvent.click(within(section).getByLabelText('Enable H5 access'))
 
@@ -394,6 +400,32 @@ describe('Settings > General tab', () => {
     )
   })
 
+  it('guides enabled H5 users to generate a token before the QR code exists', async () => {
+    useSettingsStore.setState({
+      h5Access: {
+        enabled: true,
+        tokenPreview: 'h5oldtok',
+        allowedOrigins: [],
+        publicBaseUrl: 'http://192.168.0.102:3456',
+      },
+    })
+    render(<Settings />)
+
+    fireEvent.click(screen.getByText('H5 Access'))
+    const section = screen.getByRole('region', { name: 'H5 Access' })
+
+    expect(within(section).getByText('Generate a token to create the QR code.')).toBeInTheDocument()
+    expect(within(section).getByText('Click Generate token to create a QR link that can be scanned.')).toBeInTheDocument()
+    expect(within(section).queryByAltText('H5 access QR code')).not.toBeInTheDocument()
+
+    await act(async () => {
+      fireEvent.click(within(section).getByRole('button', { name: 'Generate token' }))
+    })
+
+    expect(useSettingsStore.getState().regenerateH5AccessToken).toHaveBeenCalledTimes(1)
+    expect(await within(section).findByAltText('H5 access QR code')).toBeInTheDocument()
+  })
+
   it('shows the generated H5 token as a fallback when requested', async () => {
     useSettingsStore.setState({
       h5Access: {
@@ -405,7 +437,7 @@ describe('Settings > General tab', () => {
     })
     render(<Settings />)
 
-    fireEvent.click(screen.getByText('General'))
+    fireEvent.click(screen.getByText('H5 Access'))
     const section = screen.getByRole('region', { name: 'H5 Access' })
     fireEvent.click(within(section).getByLabelText('Enable H5 access'))
 
@@ -416,16 +448,6 @@ describe('Settings > General tab', () => {
     fireEvent.click(within(section).getByRole('button', { name: 'Show token' }))
 
     expect(within(section).getByText('h5_default_generated_token')).toBeInTheDocument()
-  })
-
-  it('places H5 access after the common General settings sections', () => {
-    render(<Settings />)
-
-    fireEvent.click(screen.getByText('General'))
-
-    const webSearchTitle = screen.getByRole('heading', { name: 'WebSearch' })
-    const h5Title = screen.getByRole('heading', { name: 'H5 Access' })
-    expect((webSearchTitle.compareDocumentPosition(h5Title) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0).toBe(true)
   })
 
   it('copies the H5 URL when available', async () => {
@@ -439,7 +461,7 @@ describe('Settings > General tab', () => {
     })
     render(<Settings />)
 
-    fireEvent.click(screen.getByText('General'))
+    fireEvent.click(screen.getByText('H5 Access'))
     const section = screen.getByRole('region', { name: 'H5 Access' })
 
     await act(async () => {
@@ -453,7 +475,7 @@ describe('Settings > General tab', () => {
     useSettingsStore.setState({ h5AccessError: 'H5 unavailable' })
     render(<Settings />)
 
-    fireEvent.click(screen.getByText('General'))
+    fireEvent.click(screen.getByText('H5 Access'))
 
     const section = screen.getByRole('region', { name: 'H5 Access' })
     expect(within(section).getByText('H5 unavailable')).toBeInTheDocument()
@@ -470,7 +492,7 @@ describe('Settings > General tab', () => {
     })
     render(<Settings />)
 
-    fireEvent.click(screen.getByText('General'))
+    fireEvent.click(screen.getByText('H5 Access'))
 
     const section = screen.getByRole('region', { name: 'H5 Access' })
     fireEvent.change(within(section).getByLabelText('Public URL'), {
