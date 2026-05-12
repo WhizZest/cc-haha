@@ -25,16 +25,38 @@ describe('h5AccessPolicy', () => {
     expect(shouldRequireH5Token({ request, url: new URL(request.url), h5Enabled: true, explicitAuthRequired: false })).toBe(false)
   })
 
-  test('keeps internal SDK websocket routes tokenless', () => {
-    const request = req('http://192.168.0.20:3456/sdk/session-1')
+  test('keeps local internal SDK websocket routes tokenless', () => {
+    const request = req('http://127.0.0.1:3456/sdk/session-1')
     expect(classifyH5Request(request, new URL(request.url))).toBe('internal-sdk')
     expect(shouldRequireH5Token({ request, url: new URL(request.url), h5Enabled: true, explicitAuthRequired: false })).toBe(false)
+  })
+
+  test('does not trust remote SDK websocket routes by path alone', () => {
+    const request = req('http://192.168.0.20:3456/sdk/session-1')
+    expect(classifyH5Request(request, new URL(request.url))).toBe('h5-browser')
+    expect(shouldRequireH5Token({ request, url: new URL(request.url), h5Enabled: true, explicitAuthRequired: false })).toBe(true)
   })
 
   test('keeps adapter API routes tokenless for local integrations', () => {
     const request = req('http://127.0.0.1:3456/api/adapters')
     expect(classifyH5Request(request, new URL(request.url))).toBe('local-trusted')
     expect(shouldRequireH5Token({ request, url: new URL(request.url), h5Enabled: true, explicitAuthRequired: false })).toBe(false)
+  })
+
+  test('does not trust loopback adapter requests from non-local browser origins', () => {
+    const request = req('http://127.0.0.1:3456/api/adapters', {
+      headers: { Origin: 'https://blocked.example.com' },
+    })
+    expect(classifyH5Request(request, new URL(request.url))).toBe('h5-browser')
+    expect(shouldRequireH5Token({ request, url: new URL(request.url), h5Enabled: true, explicitAuthRequired: false })).toBe(true)
+  })
+
+  test('keeps local desktop chat websocket routes tokenless', () => {
+    for (const init of [{}, { headers: { Origin: 'http://tauri.localhost' } }]) {
+      const request = req('http://127.0.0.1:3456/ws/session-1', init)
+      expect(classifyH5Request(request, new URL(request.url))).toBe('local-trusted')
+      expect(shouldRequireH5Token({ request, url: new URL(request.url), h5Enabled: true, explicitAuthRequired: false })).toBe(false)
+    }
   })
 
   test('requires H5 token for LAN browser API, proxy, and chat websocket routes when enabled', () => {

@@ -27,11 +27,13 @@ function isLocalOrigin(origin: string | null): boolean {
 }
 
 export function classifyH5Request(request: Request, url: URL): H5RequestKind {
-  if (url.pathname.startsWith('/sdk/')) {
+  const localTrusted = isLoopbackHost(url.hostname) && isLocalOrigin(request.headers.get('Origin'))
+
+  if (url.pathname.startsWith('/sdk/') && localTrusted) {
     return 'internal-sdk'
   }
 
-  if (isLoopbackHost(url.hostname) && isLocalOrigin(request.headers.get('Origin'))) {
+  if (localTrusted) {
     return 'local-trusted'
   }
 
