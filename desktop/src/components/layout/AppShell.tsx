@@ -28,6 +28,7 @@ function isChatTab(tab: Tab | undefined) {
 
 export function AppShell() {
   const fetchSettings = useSettingsStore((s) => s.fetchAll)
+  const uiZoom = useSettingsStore((s) => s.uiZoom)
   const sidebarOpen = useUIStore((s) => s.sidebarOpen)
   const toggleSidebar = useUIStore((s) => s.toggleSidebar)
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen)
@@ -194,7 +195,7 @@ export function AppShell() {
   }
 
   return (
-    <div className={`app-shell app-shell-viewport flex overflow-hidden bg-[var(--color-surface)]${isMobileShell ? ' app-shell--mobile' : ''}`}>
+    <div className={`app-shell app-shell-viewport flex overflow-hidden bg-[var(--color-surface)]${isMobileShell ? ' app-shell--mobile' : ''}`} style={{ zoom: uiZoom }}>
       {isMobileShell && effectiveSidebarOpen ? (
         <button
           type="button"

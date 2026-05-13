@@ -583,7 +583,7 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
       )}
 
       {!isMobile && (
-        <div className={`border-t border-[var(--color-border)] p-3 ${expanded ? '' : 'flex justify-center'}`}>
+        <div className={`absolute bottom-0 left-0 right-0 border-t border-[var(--color-border)] p-3 ${expanded ? '' : 'flex justify-center'}`}>
           <NavItem
             active={activeTabId === SETTINGS_TAB_ID}
             collapsed={!expanded}

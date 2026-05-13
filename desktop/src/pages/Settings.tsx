@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import QRCode from 'qrcode'
 import { Copy, Eye, EyeOff, PowerOff, QrCode, RotateCw } from 'lucide-react'
-import { useSettingsStore } from '../stores/settingsStore'
+import { useSettingsStore, UI_ZOOM_MIN, UI_ZOOM_MAX, UI_ZOOM_STEP } from '../stores/settingsStore'
 import { useProviderStore } from '../stores/providerStore'
 import { useTranslation } from '../i18n'
 import { Modal } from '../components/shared/Modal'
@@ -1382,6 +1382,8 @@ function GeneralSettings() {
     setWebSearch,
     responseLanguage,
     setResponseLanguage,
+    uiZoom,
+    setUiZoom,
   } = useSettingsStore()
   const t = useTranslation()
   const [webSearchDraft, setWebSearchDraft] = useState(webSearch)
@@ -1772,6 +1774,32 @@ function GeneralSettings() {
                 {t('settings.general.webSearchSave')}
               </Button>
             </div>
+          </div>
+        </div>
+      </div>
+      {/* UI Zoom */}
+      <div className="mt-8">
+        <h2 className="text-base font-semibold text-[var(--color-text-primary)] mb-1">{t('settings.general.uiZoom')}</h2>
+        <p className="text-sm text-[var(--color-text-tertiary)] mb-3">{t('settings.general.uiZoomDescription')}</p>
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-end">
+            <span className="text-sm text-[var(--color-text-secondary)]">
+              {Math.round(uiZoom * 100)}%
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-[var(--color-text-tertiary)]">{Math.round(UI_ZOOM_MIN * 100)}%</span>
+            <input
+              type="range"
+              min={UI_ZOOM_MIN}
+              max={UI_ZOOM_MAX}
+              step={UI_ZOOM_STEP}
+              value={uiZoom}
+              onChange={(e) => setUiZoom(parseFloat(e.target.value))}
+              onMouseUp={(e) => e.currentTarget.blur()}
+              className="flex-1"
+            />
+            <span className="text-xs text-[var(--color-text-tertiary)]">{Math.round(UI_ZOOM_MAX * 100)}%</span>
           </div>
         </div>
       </div>

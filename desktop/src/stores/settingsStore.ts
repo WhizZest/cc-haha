@@ -8,6 +8,10 @@ import type { Locale } from '../i18n'
 import { useUIStore } from './uiStore'
 
 const LOCALE_STORAGE_KEY = 'cc-haha-locale'
+const UI_ZOOM_STORAGE_KEY = 'cc-haha-ui-zoom'
+export const UI_ZOOM_MIN = 0.5
+export const UI_ZOOM_MAX = 2.0
+export const UI_ZOOM_STEP = 0.05
 let desktopNotificationsSaveQueue: Promise<void> = Promise.resolve()
 
 function getStoredLocale(): Locale {
@@ -16,6 +20,17 @@ function getStoredLocale(): Locale {
     if (stored === 'en' || stored === 'zh') return stored
   } catch { /* localStorage unavailable */ }
   return 'zh'
+}
+
+function getStoredUiZoom(): number {
+  try {
+    const stored = localStorage.getItem(UI_ZOOM_STORAGE_KEY)
+    if (stored === null) return 1.0
+    const parsed = parseFloat(stored)
+    if (isNaN(parsed)) return 1.0
+    return Math.min(UI_ZOOM_MAX, Math.max(UI_ZOOM_MIN, parsed))
+  } catch { /* localStorage unavailable */ }
+  return 1.0
 }
 
 type SettingsStore = {
@@ -33,6 +48,7 @@ type SettingsStore = {
   h5Access: H5AccessSettings
   h5AccessError: string | null
   responseLanguage: string
+  uiZoom: number
   isLoading: boolean
   error: string | null
 
@@ -55,6 +71,7 @@ type SettingsStore = {
     publicBaseUrl?: string | null
   }) => Promise<void>
   setResponseLanguage: (language: string) => Promise<void>
+  setUiZoom: (zoom: number) => void
 }
 
 const DEFAULT_H5_ACCESS_SETTINGS: H5AccessSettings = {
@@ -79,8 +96,15 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   h5Access: DEFAULT_H5_ACCESS_SETTINGS,
   h5AccessError: null,
   responseLanguage: '',
+  uiZoom: getStoredUiZoom(),
   isLoading: false,
   error: null,
+
+  setUiZoom: (zoom: number) => {
+    const clamped = Math.min(UI_ZOOM_MAX, Math.max(UI_ZOOM_MIN, zoom))
+    set({ uiZoom: clamped })
+    try { localStorage.setItem(UI_ZOOM_STORAGE_KEY, String(clamped)) } catch { /* noop */ }
+  },
 
   fetchAll: async () => {
     set({ isLoading: true, error: null })

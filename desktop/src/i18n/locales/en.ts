@@ -767,6 +767,8 @@ export const en = {
   'settings.general.webSearchBraveFreeHint': 'Create an account to generate a Search API key with free usage for testing.',
   'settings.general.webSearchHint': 'Auto uses native Claude web search for Claude model names, then falls back to Tavily and Brave keys.',
   'settings.general.webSearchSave': 'Save',
+  'settings.general.uiZoom': 'UI Zoom',
+  'settings.general.uiZoomDescription': 'Scale the entire interface for better visibility on high-DPI displays.',
 
   // ─── Empty Session ──────────────────────────────────────
   'empty.title': 'New session',
